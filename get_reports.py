@@ -2,13 +2,19 @@ import pandas as pd
 import json
 import requests
 import pickle
+import pandas as pd
 
-our_key = 'eiEHfvIAWEikGUQ2g7hrOeA0rrAMzUyI'
+search_key = 'eiEHfvIAWEikGUQ2g7hrOeA0rrAMzUyI'
+archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
+month = '2019/1'
+
 keyword = 'election'
 page = 1
 
+
 # URL
 url = 'https://api.nytimes.com/svc/search/v2/articlesearch.json?' + 'q=' + keyword + '&page=' + str(page) + '&api-key=' + our_key
+url = 'https://api.nytimes.com/svc/archive/v1/' + month + '.json?api-key=' + archive_key
 
 print('-------------- load', url, ' --------------')
 html = requests.get(url)  # load page
@@ -72,10 +78,26 @@ def extr_byline(article):
     del article['byline']
     return article
 
-def extr_keywords(article):
+
+def extr_author(field):
+    try:
+        person = field['person'][0]
+        try:
+            author = person['firstname'] + ' ' + person['middlename'] + ' ' + person['lastname']
+        except TypeError:
+            author = person['firstname'] + ' ' + person['lastname']
+    except (TypeError, IndexError):
+        author = None
+    return author
+
+def extr_organization(field):
+    organization = field['organization']
+    return organization
+
+def extr_keywords(field):
 
     keyword_list = list()
-    for keyword in article['keywords']:
+    for keyword in field:
         keyword_tup = (keyword['name'], keyword['value'])
         keyword_list.append(keyword_tup)
     return(keyword_list)
@@ -83,3 +105,12 @@ def extr_keywords(article):
 
 
 article = extr_byline(article)
+article = extr_keywords(article)
+
+df = pd.DataFrame(articles)
+dfs = df[:7000]
+dfs['author'] = dfs.byline.apply(lambda x: extr_author(x))
+dfs['organization'] = dfs.byline.apply(lambda x: extr_organization(x))
+dfs['keywords'] = dfs.keywords.apply(lambda field: extr_keywords(field))
+
+dfss = df[:2]
