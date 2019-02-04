@@ -144,8 +144,6 @@ def create_keywords_table_2(df):
     df_keywords = pd.DataFrame([[0, '*name*', '*value*', 0, dict()]], columns=['id', 'name', 'value', 'counts', 'section_count'])
 
     for k_list, section_id in zip(keywords_list, sections):
-        print(k_list, section_id)
-
         if len(k_list) > 0:
             for k_word in k_list:
                 id = df_keywords.id[(df_keywords.value == k_word[1]) & (df_keywords.name == k_word[0])]
@@ -159,7 +157,6 @@ def create_keywords_table_2(df):
                 elif len(id) == 1:
                     id = id._get_values(0)
                     section_dict = df_keywords.section_count[df_keywords.id == id]._get_values(0)
-                    print(section_dict)
                     try: # is there already a value to this section_id?
                         value = section_dict[section_id]
                     except KeyError: # could not find this section_id
@@ -172,7 +169,6 @@ def create_keywords_table_2(df):
                         pass
                 else:
                     print('something went wrong')  # TODO: delete
-
     return df_keywords
 
 
@@ -225,7 +221,7 @@ def create_section_table(df):
     return table
 
 
-df = pd.DataFrame(articles[:100])
+df = pd.DataFrame(articles[:200])
 df['author_fn'] = df.byline.apply(lambda x: extr_author_fn(x))
 # df['author_mn'] = df.byline.apply(lambda x: extr_author_mn(x))
 df['author_ln'] = df.byline.apply(lambda x: extr_author_ln(x))
@@ -240,15 +236,17 @@ df[:2]
 # TODO: too much back and forth here... have only one function, not three
 
 # step 1: translate keywords.json to ('name', 'value') pairs
+# this can also be done after step 2... somehow solve smarter
 df.keywords = df.keywords.apply(lambda x: extr_keywords_step1(x))
 
 # step 2: use those pairs to create table of keywords with ids and counts
-table_keywords = create_keywords_table(df.keywords)
+# TODO: [] section_count don't count uncategorized (0)!
+#       [] then find most common section tag, new attribute
+table_keywords = create_keywords_table_2(df)
 
 # step 3: translate ('name', 'value') pairs to ids
 df.keywords = df.keywords.apply(lambda x: keywords2id(x, table_keywords))
 
-# TODO: combine with sections? - weightvector
 # TODO: or create small matrix first, that ever row just once and then with join over keyword_id and article find weightvector
 
 # with open(month_path + "_df.pickle", "wb") as f:
@@ -265,23 +263,6 @@ table_sections = create_section_table(df)
 df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
 
 
-table_keywords['section_count'] = 0
-
-def keyword_section_frequency(df, table_keywords):
-
-    keyword_ids = df.keywords
-    sections = df.section
-    section_count = dict()
-
-    for i in range(0, keyword_ids.shape[0]):
-        keyword_id = keyword_ids[i]
-        section = sections[i]
-        for k_id in keyword_id:
-            section_count = table_keywords.section_count[table_keywords.id == k_id]
-            section_count
-            table_keywords.section_count[table_keywords.id == k_id] =
-
-
 
 ######################################################################################
 #            KEYWORDS NETWORK GRAPH
@@ -289,11 +270,11 @@ def keyword_section_frequency(df, table_keywords):
 
 # nodes: keywords
 # id, keyword, type-section_name
-# the section_name won't be unique, take most frequent?
+# the section_name won't be unique, take most frequent? [doing]
 # only use keywords that appeared >30(?) times
 t = table_keywords[table_keywords.counts >= 30]
 
 
 # edges: appeared together, id1 < id2
-# id1, id2, weight-frequency
+# id1, id2, weight-frequency [next]
 
