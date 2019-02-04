@@ -2,18 +2,13 @@ import json
 import requests
 import pickle
 import pandas as pd
+import numpy as np
 
-search_key = 'eiEHfvIAWEikGUQ2g7hrOeA0rrAMzUyI'
 archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
 month = '2018/1'
 month_path = '2018_01'
 
-keyword = 'election'
-page = 1
-
-
 # URL
-url = 'https://api.nytimes.com/svc/search/v2/articlesearch.json?' + 'q=' + keyword + '&page=' + str(page) + '&api-key=' + search_key
 url = 'https://api.nytimes.com/svc/archive/v1/' + month + '.json?api-key=' + archive_key
 
 print('-------------- load', url, ' --------------')
@@ -26,8 +21,8 @@ response = api_return['response']
 with open(month_path + ".pickle", "wb") as f:
     pickle.dump(response, f)
 
-# with open("response_1.pkl", "rb") as f:
-#     response = pickle.load(f)
+with open(month_path + ".pickle", "rb") as f:
+    response = pickle.load(f)
 
 meta = response['meta']
 articles = response['docs']
@@ -151,25 +146,41 @@ def create_keywords_table_2(df):
                 if len(id) == 0:
                     next_id = max(df_keywords.id) + 1
                     section_dict = {section_id: 1}
-                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]], columns=['id', 'name', 'value', 'counts', 'section_count'])
+                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
                     df_keywords = df_keywords.append(new_row, ignore_index=True)
 
                 elif len(id) == 1:
+                    # increase count of keyword by one
                     id = id._get_values(0)
-                    section_dict = df_keywords.section_count[df_keywords.id == id]._get_values(0)
-                    try: # is there already a value to this section_id?
-                        value = section_dict[section_id]
-                    except KeyError: # could not find this section_id
-                        value = 0
-                    section_dict.update({section_id: value+1})
                     df_keywords.loc[df_keywords.id == id, 'counts'] += 1
-                    try: # somehow did not work when the new section_dict was longer than the old one... it overwrites the column but still gives an error message
-                        df_keywords.loc[df_keywords.id == id, 'section_count'] = section_dict
-                    except ValueError:
+
+                    # increase count of section by, but only if it was not section == 0
+                    if section_id == 0:
                         pass
+                    else:
+                        section_dict = df_keywords.section_count[df_keywords.id == id]._get_values(0)
+                        try: # is there already a value to this section_id?
+                            value = section_dict[section_id]
+                        except KeyError: # could not find this section_id
+                            value = 0
+                        section_dict.update({section_id: value+1})
+                        try: # somehow did not work when the new section_dict was longer than the old one... it overwrites the column but still gives an error message
+                            df_keywords.loc[df_keywords.id == id, 'section_count'] = section_dict
+                        except ValueError:
+                            pass
                 else:
                     print('something went wrong')  # TODO: delete
+    df_keywords['section'] = df_keywords.section_count.apply(lambda x: section_max(x))
     return df_keywords
+
+
+def section_max(field):
+    try:
+        section = pd.Series(field).idxmax()
+    except ValueError: # if dict was empty because keyword was never used in an article that was assigned to section
+        section = 0
+    return section
 
 
 def keywords2id(field, table_keywords):
@@ -221,7 +232,7 @@ def create_section_table(df):
     return table
 
 
-df = pd.DataFrame(articles[:200])
+df = pd.DataFrame(articles)
 df['author_fn'] = df.byline.apply(lambda x: extr_author_fn(x))
 # df['author_mn'] = df.byline.apply(lambda x: extr_author_mn(x))
 df['author_ln'] = df.byline.apply(lambda x: extr_author_ln(x))
@@ -233,34 +244,28 @@ df['headline_main'] = df.headline.apply(lambda field: extr_headline_main(field))
 df['headline_print'] = df.headline.apply(lambda field: extr_headline_print(field))
 df[:2]
 
+### section mapping
+table_sections = create_section_table(df)
+df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
+# table_keywords = create_keywords_table_2(df)
+with open("table_keywords.pickle", "rb") as f:
+    table_keywords = pickle.load(f)
+
 # TODO: too much back and forth here... have only one function, not three
 
 # step 1: translate keywords.json to ('name', 'value') pairs
-# this can also be done after step 2... somehow solve smarter
 df.keywords = df.keywords.apply(lambda x: extr_keywords_step1(x))
 
-# step 2: use those pairs to create table of keywords with ids and counts
-# TODO: [] section_count don't count uncategorized (0)!
-#       [] then find most common section tag, new attribute
-table_keywords = create_keywords_table_2(df)
-
-# step 3: translate ('name', 'value') pairs to ids
+# step 2: translate ('name', 'value') pairs to ids
 df.keywords = df.keywords.apply(lambda x: keywords2id(x, table_keywords))
-
-# TODO: or create small matrix first, that ever row just once and then with join over keyword_id and article find weightvector
 
 # with open(month_path + "_df.pickle", "wb") as f:
 #     pickle.dump(df, f)
 #
 # with open("table_keywords.pickle", "wb") as f:
-#      pickle.dump(table_kewwords, f)
+#       pickle.dump(table_keywords, f)
+#
 
-with open("table_keywords.pickle", "rb") as f:
-    table_keywords = pickle.load(f)
-
-### section mapping
-table_sections = create_section_table(df)
-df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
 
 
 
@@ -270,11 +275,13 @@ df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
 
 # nodes: keywords
 # id, keyword, type-section_name
-# the section_name won't be unique, take most frequent? [doing]
 # only use keywords that appeared >30(?) times
-t = table_keywords[table_keywords.counts >= 30]
+t = table_keywords[table_keywords.counts >= 30][['id', 'value', 'section']]
 
 
 # edges: appeared together, id1 < id2
 # id1, id2, weight-frequency [next]
+# can get from keyword_id list. df.keywords.apply(lambda x: keywords_list2edges(x))
+# def keywords_list2edgex(field):
+# returns list of tupels (k1, k2), k1 < k2, this is the key to a dict, the dict will have count... or dict inside dict? something like that
 
