@@ -3,6 +3,7 @@ import requests
 import pickle
 import pandas as pd
 import numpy as np
+from itertools import chain
 
 archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
 month = '2018/1'
@@ -96,11 +97,13 @@ def extr_organization(field):
     return organization
 
 
-def extr_keywords_step1(field):
+def extr_keywords_step1(field, table_keywords):
     keyword_list = list()
     for keyword in field:
-        keyword_tup = (keyword['name'], keyword['value'])
-        keyword_list.append(keyword_tup)
+        id = table_keywords.id[(table_keywords.name == keyword['name']) & (table_keywords.value == keyword['value'])]._get_values(0)
+        #keyword_tup = (keyword['name'], keyword['value'])
+        #keyword_list.append(keyword_tup)
+        keyword_list.append(id)
     return(keyword_list)
 
 def extr_headline_main(field):
@@ -245,7 +248,9 @@ df['headline_print'] = df.headline.apply(lambda field: extr_headline_print(field
 df[:2]
 
 ### section mapping
-table_sections = create_section_table(df)
+# table_sections = create_section_table(df)
+with open("table_sections.pickle", "rb") as f:
+    table_sections = pickle.load(f)
 df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
 # table_keywords = create_keywords_table_2(df)
 with open("table_keywords.pickle", "rb") as f:
@@ -254,7 +259,7 @@ with open("table_keywords.pickle", "rb") as f:
 # TODO: too much back and forth here... have only one function, not three
 
 # step 1: translate keywords.json to ('name', 'value') pairs
-df.keywords = df.keywords.apply(lambda x: extr_keywords_step1(x))
+df.keywords = df.keywords.apply(lambda x: extr_keywords_step1(x, table_keywords))
 
 # step 2: translate ('name', 'value') pairs to ids
 df.keywords = df.keywords.apply(lambda x: keywords2id(x, table_keywords))
@@ -262,9 +267,9 @@ df.keywords = df.keywords.apply(lambda x: keywords2id(x, table_keywords))
 # with open(month_path + "_df.pickle", "wb") as f:
 #     pickle.dump(df, f)
 #
-# with open("table_keywords.pickle", "wb") as f:
-#       pickle.dump(table_keywords, f)
-#
+with open("table_sections.pickle", "wb") as f:
+      pickle.dump(table_sections, f)
+
 
 
 
@@ -280,8 +285,34 @@ t = table_keywords[table_keywords.counts >= 30][['id', 'value', 'section']]
 
 
 # edges: appeared together, id1 < id2
-# id1, id2, weight-frequency [next]
-# can get from keyword_id list. df.keywords.apply(lambda x: keywords_list2edges(x))
-# def keywords_list2edgex(field):
-# returns list of tupels (k1, k2), k1 < k2, this is the key to a dict, the dict will have count... or dict inside dict? something like that
+# id1, id2, weight-frequency
 
+def keyword_edges(field):
+
+    field.sort()
+    edges = []
+    for i in range(0, len(field)-1):
+        edge = str(field[i]) + ',' + str(field[i+1])
+        edges.append(edge)
+    return edges
+
+
+df['keyword_edges'] = df.keywords.apply(lambda x: keyword_edges(x))
+
+l = df.keyword_edges.tolist()
+m = pd.Series(list(chain.from_iterable(l)))
+edges_weights = m.value_counts()
+
+edges = pd.DataFrame([x.split(',') for x in edges_weights.index], columns=['keyword_1', 'keyword_2'])
+edges['keyword_1'] = edges.keyword_1.apply(lambda x: int(x))
+edges['keyword_2'] = edges.keyword_2.apply(lambda x: int(x))
+edges['counts'] = edges_weights.reset_index()[0]
+
+e = edges[edges.counts > 2]
+
+t = table_keywords[['id', 'section', 'value']]
+idx_1 = e.keyword_1.value_counts().index.get_values().tolist()
+idx_2 = e.keyword_2.value_counts().index.get_values().tolist()
+t_1 = t.loc[idx_1]
+t_2 = t.loc[idx_2]
+t_3 = t_1.merge(t_2, on=list(t_1), how='outer')
