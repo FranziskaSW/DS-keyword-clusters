@@ -4,178 +4,27 @@ import pickle
 import pandas as pd
 import numpy as np
 from itertools import chain
+from itertools import combinations
+import os
 
-archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
-month = '2018/1'
-month_path = '2018_01'
+global cwd
+cwd = os.getcwd()
 
-# URL
-url = 'https://api.nytimes.com/svc/archive/v1/' + month + '.json?api-key=' + archive_key
-
-print('-------------- load', url, ' --------------')
-html = requests.get(url)  # load page
-a = html.text
-api_return = json.loads(a)
-response = api_return['response']
-
-
-with open(month_path + ".pickle", "wb") as f:
-    pickle.dump(response, f)
-
-with open(month_path + ".pickle", "rb") as f:
-    response = pickle.load(f)
-
-meta = response['meta']
-articles = response['docs']
-
-def extract_info(article_old, keys):
-    """
-    not needed
-    :param article_old:
-    :param keys:
-    :return:
-    """
-    article_new = dict()
-    for key in keys:
-        try:
-            article_new.update({key: article_old[key]})
-        except KeyError:
-            article_new.update({key: None})
-    return article_new
-
-
-def extr_author(field):
-    try:
-        person = field['person'][0]
-        try:
-            author = person['firstname'] + ' ' + person['middlename'] + ' ' + person['lastname']
-        except KeyError:
-            author = person['firstname'] + ' ' + person['lastname']
-    except (TypeError, IndexError):
-        author = None
-    return author
-
-def extr_author_fn(field):
-    try:
-        person = field['person'][0]
-        try:
-            name = person['firstname']
-        except KeyError:
-            name = ''
-    except (TypeError, IndexError):
-        name = ''
-    return name
-
-def extr_author_mn(field):
-    try:
-        person = field['person'][0]
-        try:
-            name = person['middlename']
-        except KeyError:
-            name = ''
-    except (TypeError, IndexError):
-        name = ''
-    return name
-
-def extr_author_ln(field):
-    try:
-        person = field['person'][0]
-        try:
-            name = person['lastname']
-        except KeyError:
-            name = ''
-    except (TypeError, IndexError):
-        name = ''
-    return name
-
-
-def extr_organization(field):
-    try:
-        organization = field['organization']
-    except (KeyError, TypeError):
-        organization = None
-    return organization
-
-
-def extr_keywords_step1(field, table_keywords):
+def extr_keywords_step1(field):
     keyword_list = list()
     for keyword in field:
-        id = table_keywords.id[(table_keywords.name == keyword['name']) & (table_keywords.value == keyword['value'])]._get_values(0)
-        #keyword_tup = (keyword['name'], keyword['value'])
-        #keyword_list.append(keyword_tup)
+        keyword_tup = (keyword['name'], keyword['value'])
+        keyword_list.append(keyword_tup)
+    return keyword_list
+
+
+def extr_keywords(field, table_keywords):
+    keyword_list = list()
+    for keyword in field:
+        id = table_keywords.id[
+            (table_keywords.name == keyword['name']) & (table_keywords.value == keyword['value'])]._get_values(0)
         keyword_list.append(id)
-    return(keyword_list)
-
-def extr_headline_main(field):
-    return field['main']
-
-def extr_headline_print(field):
-    return field['print_headline']
-
-
-def create_keywords_table(keywords_list):
-    # TODO: take first line outside and table_keywords as argument of function so that it can be extended
-    df_keywords = pd.DataFrame([[0, '*name*', '*value*', 0]], columns=['id', 'name', 'value', 'counts'])
-
-    for k_list in keywords_list:
-        if len(k_list) > 0:
-            for k_word in k_list:
-                id = df_keywords.id[(df_keywords.value == k_word[1]) & (df_keywords.name == k_word[0])]
-                if len(id) == 0:
-                    next_id = max(df_keywords.id) + 1
-                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1]], columns=['id', 'name', 'value', 'counts'])
-                    df_keywords = df_keywords.append(new_row, ignore_index=True)
-                elif len(id) == 1:
-                    id = id._get_values(0)
-                    df_keywords.loc[df_keywords.id == id, 'counts'] += 1
-                else:
-                    print('something went wrong')  # TODO: delete
-    return df_keywords
-
-
-def create_keywords_table_2(df):
-
-    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
-    sections = df.section  # TODO: or the other feature
-
-    # TODO: take first line outside and table_keywords as argument of function so that it can be extended
-    df_keywords = pd.DataFrame([[0, '*name*', '*value*', 0, dict()]], columns=['id', 'name', 'value', 'counts', 'section_count'])
-
-    for k_list, section_id in zip(keywords_list, sections):
-        if len(k_list) > 0:
-            for k_word in k_list:
-                id = df_keywords.id[(df_keywords.value == k_word[1]) & (df_keywords.name == k_word[0])]
-
-                if len(id) == 0:
-                    next_id = max(df_keywords.id) + 1
-                    section_dict = {section_id: 1}
-                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
-                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
-                    df_keywords = df_keywords.append(new_row, ignore_index=True)
-
-                elif len(id) == 1:
-                    # increase count of keyword by one
-                    id = id._get_values(0)
-                    df_keywords.loc[df_keywords.id == id, 'counts'] += 1
-
-                    # increase count of section by, but only if it was not section == 0
-                    if section_id == 0:
-                        pass
-                    else:
-                        section_dict = df_keywords.section_count[df_keywords.id == id]._get_values(0)
-                        try: # is there already a value to this section_id?
-                            value = section_dict[section_id]
-                        except KeyError: # could not find this section_id
-                            value = 0
-                        section_dict.update({section_id: value+1})
-                        try: # somehow did not work when the new section_dict was longer than the old one... it overwrites the column but still gives an error message
-                            df_keywords.loc[df_keywords.id == id, 'section_count'] = section_dict
-                        except ValueError:
-                            pass
-                else:
-                    print('something went wrong')  # TODO: delete
-    df_keywords['section'] = df_keywords.section_count.apply(lambda x: section_max(x))
-    return df_keywords
+    return keyword_list
 
 
 def section_max(field):
@@ -184,17 +33,6 @@ def section_max(field):
     except ValueError: # if dict was empty because keyword was never used in an article that was assigned to section
         section = 0
     return section
-
-
-def keywords2id(field, table_keywords):
-    id_list = []
-    try:
-        for tup in field:
-            id = table_keywords.id[(table_keywords.value == tup[1]) & (table_keywords.name == tup[0])]._get_values(0)
-            id_list.append(id)
-    except TypeError:
-        id_list = None
-    return id_list
 
 
 def section2id(field, table_sections):
@@ -208,12 +46,51 @@ def section2id(field, table_sections):
     return id
 
 
+def create_keywords_table(df, table):
+    
+    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
+    sections = df.section  # TODO: or the other feature
+    table = table[table.counts >= 3]
 
-def create_section_table(df):
+    for k_list, section_id in zip(keywords_list, sections):
+        if len(k_list) > 0:
+            for k_word in k_list:
+                keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
+
+                if len(keyword_id) == 0:
+                    next_id = max(table.id) + 1
+                    section_dict = {section_id: 1}
+                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
+                    table = table.append(new_row, ignore_index=True)
+
+                elif len(keyword_id) == 1:
+                    # increase count of keyword by one
+                    keyword_id = keyword_id._get_values(0)
+                    table.loc[table.id == keyword_id, 'counts'] += 1
+
+                    # increase count of section by, but only if it was not section == 0
+                    if section_id == 0:
+                        pass
+                    else:
+                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+                        try: # is there already a value to this section_id?
+                            value = section_dict[section_id]
+                        except KeyError: # could not find this section_id
+                            value = 0
+                        section_dict.update({section_id: value+1})
+                        try: # somehow did not work when the new section_dict was longer than the old one... it overwrites the column but still gives an error message
+                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
+                        except ValueError:
+                            pass
+                else:
+                    print('something went wrong')  # TODO: delete
+    table['section'] = table.section_count.apply(lambda x: section_max(x))
+    return table
+
+
+def create_section_table(df, table):
     sections = df.section_name
-
-    # TODO: take first line outside and table_keywords as argument of function so that it can be extended
-    table = pd.DataFrame([[0, '*name*', 0]], columns=['id', 'name', 'counts'])
 
     for section in sections:
         try:
@@ -235,84 +112,133 @@ def create_section_table(df):
     return table
 
 
-df = pd.DataFrame(articles)
-df['author_fn'] = df.byline.apply(lambda x: extr_author_fn(x))
-# df['author_mn'] = df.byline.apply(lambda x: extr_author_mn(x))
-df['author_ln'] = df.byline.apply(lambda x: extr_author_ln(x))
-df['author'] = df.author_fn + ' ' + df.author_ln
-
-df['organization'] = df.byline.apply(lambda x: extr_organization(x))
-# df['keywords'] = df.keywords.apply(lambda field: extr_keywords(field))
-df['headline_main'] = df.headline.apply(lambda field: extr_headline_main(field))
-df['headline_print'] = df.headline.apply(lambda field: extr_headline_print(field))
-df[:2]
-
-### section mapping
-# table_sections = create_section_table(df)
-with open("table_sections.pickle", "rb") as f:
-    table_sections = pickle.load(f)
-df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
-# table_keywords = create_keywords_table_2(df)
-with open("table_keywords.pickle", "rb") as f:
-    table_keywords = pickle.load(f)
-
-# TODO: too much back and forth here... have only one function, not three
-
-# step 1: translate keywords.json to ('name', 'value') pairs
-df.keywords = df.keywords.apply(lambda x: extr_keywords_step1(x, table_keywords))
-
-# step 2: translate ('name', 'value') pairs to ids
-df.keywords = df.keywords.apply(lambda x: keywords2id(x, table_keywords))
-
-# with open(month_path + "_df.pickle", "wb") as f:
-#     pickle.dump(df, f)
-#
-with open("table_sections.pickle", "wb") as f:
-      pickle.dump(table_sections, f)
-
-
-
-
-
 ######################################################################################
 #            KEYWORDS NETWORK GRAPH
 ######################################################################################
 
-# nodes: keywords
-# id, keyword, type-section_name
-# only use keywords that appeared >30(?) times
-t = table_keywords[table_keywords.counts >= 30][['id', 'value', 'section']]
-
-
-# edges: appeared together, id1 < id2
-# id1, id2, weight-frequency
-
 def keyword_edges(field):
 
-    field.sort()
     edges = []
-    for i in range(0, len(field)-1):
-        edge = str(field[i]) + ',' + str(field[i+1])
+    for subset in combinations(field, 2):
+        edge = str(subset[0]) + ',' + str(subset[1])
         edges.append(edge)
     return edges
 
 
-df['keyword_edges'] = df.keywords.apply(lambda x: keyword_edges(x))
+def edges_nodes(article_keywords, table_keywords, min_weight):
 
-l = df.keyword_edges.tolist()
-m = pd.Series(list(chain.from_iterable(l)))
-edges_weights = m.value_counts()
+    edges_list = article_keywords.apply(lambda x: keyword_edges(x)).tolist()
+    edges_df   = pd.Series(list(chain.from_iterable(edges_list)))
+    edges_weights = edges_df.value_counts()
 
-edges = pd.DataFrame([x.split(',') for x in edges_weights.index], columns=['keyword_1', 'keyword_2'])
-edges['keyword_1'] = edges.keyword_1.apply(lambda x: int(x))
-edges['keyword_2'] = edges.keyword_2.apply(lambda x: int(x))
-edges['counts'] = edges_weights.reset_index()[0]
+    edges = pd.DataFrame([x.split(',') for x in edges_weights.index], columns=['keyword_1', 'keyword_2'])
+    edges['Source'] = edges.keyword_1.apply(lambda x: int(x))
+    edges['Target'] = edges.keyword_2.apply(lambda x: int(x))
+    edges['Weight'] = edges_weights.reset_index()[0]
 
-e = edges[edges.counts > 2]
+    e = edges[edges.Weight >= min_weight][['Source', 'Target', 'Weight']]
 
-t = table_keywords[['id', 'section', 'value']]
-idx_1 = e.keyword_1.value_counts().index.get_values().tolist()
-idx_2 = e.keyword_2.value_counts().index.get_values().tolist()
-t_1 = t.loc[idx_1]
-t_2 = t.loc[idx_2]
-t_3 = t_1.merge(t_2, on=list(t_1), how='outer')
+    t = table_keywords[['id', 'section', 'value']]
+    ids_1 = e.Source.value_counts().index.get_values().tolist()
+    ids_2 = e.Target.value_counts().index.get_values().tolist()
+    t_1 = t[t.id.isin(ids_1)]
+    t_2 = t[t.id.isin(ids_2)]
+    t_3 = t_1.merge(t_2, on=list(t_1), how='outer')
+    return e, t_3
+
+
+def get_data(year, month):
+    archive_key = 'Jctp3rj1ZdOaLQiMArs79ioGnwvfK1pC'
+    month_api = year + '/' + month
+    if len(month) == 1:
+        month = '0' + month
+    data_suffix = year + '_' + month
+    url = 'https://api.nytimes.com/svc/archive/v1/' + month_api + '.json?api-key=' + archive_key
+
+    print('-------------- load', url, ' --------------')
+    html = requests.get(url)  # load page
+    a = html.text
+    api_return = json.loads(a)
+    response = api_return['response']
+
+    with open(cwd + "/data/archive/" + data_suffix + ".pickle", "wb") as f:
+        pickle.dump(response, f)
+
+    articles = response['docs']
+    df = pd.DataFrame(articles)
+
+    return df, data_suffix
+
+
+def update_tables(df):
+
+    with open(cwd + "/data/table_sections.pickle", "rb") as f:
+        table_sections = pickle.load(f)
+    table_sections = create_section_table(df, table_sections)
+    with open(cwd + "/data/table_sections.pickle", "wb") as f:
+          pickle.dump(table_sections, f)
+    df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
+
+    with open(cwd + "/data/table_keywords.pickle", "rb") as f:
+        table_keywords = pickle.load(f)
+
+    # table_keywords = pd.DataFrame([[0, '*name*', '*value*', 0]], columns=['id', 'name', 'value', 'counts'])
+
+    table_keywords = create_keywords_table(df, table_keywords)
+    with open(cwd + "/data/table_keywords.pickle", "wb") as f:
+          pickle.dump(table_keywords, f)
+    return table_keywords, table_sections
+
+
+def main():
+    year = '2018'
+    for m in range(1,13):
+        month = str(m)
+        
+        month = '3'
+        df, data_suffix = get_data(year, month)
+        table_keywords, table_sections = update_tables(df)
+
+        df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
+    
+        edges, nodes = edges_nodes(df.keywords, table_keywords, 3)
+    
+        nodes.to_csv(cwd + '/data/gephi/nodes_' + data_suffix + '.csv', sep=';', index=False)
+        edges.to_csv(cwd + '/data/gephi/edges_' + data_suffix + '.csv', sep=';', index=False)
+
+
+        # with open(cwd + "/data/gephi/nodes_" + data_suffix + ".pickle", "wb") as f:
+        #     pickle.dump(nodes, f)
+        #
+        # with open(cwd + "/data/gephi/nodes_combined.pickle", "wb") as f:
+        #     pickle.dump(nodes, f)
+        #
+        # with open(cwd + "/data/gephi/edges_" + data_suffix + ".pickle", "wb") as f:
+        #     pickle.dump(edges, f)
+        #
+        # with open(cwd + "/data/gephi/edges_combined.pickle", "wb") as f:
+        #     pickle.dump(edges, f)
+
+        with open(cwd + "/data/gephi/nodes_" + data_suffix + ".pickle", "wb") as f:
+            pickle.dump(nodes, f)
+        with open(cwd + "/data/gephi/nodes_combined.pickle", "rb") as f:
+            nodes_combined = pickle.load(f)
+        nodes_combined = pd.merge(nodes_combined, nodes, on=['id', 'value'], how='outer')
+        with open(cwd + "/data/gephi/nodes_combined.pickle", "wb") as f:
+            pickle.dump(nodes_combined, f)
+        nodes_combined.to_csv(cwd + '/data/gephi/nodes_combined.csv', sep=';', index=False)
+
+        with open(cwd + "/data/gephi/edges_" + data_suffix + ".pickle", "wb") as f:
+            pickle.dump(edges, f)
+        with open(cwd + "/data/gephi/edges_combined.pickle", "rb") as f:
+            edges_combined = pickle.load(f)
+        edges_new = pd.merge(edges_combined, edges, on=['Source', 'Target'], how='outer').fillna(0)
+        edges_new['Weight'] = edges_new.Weight_x + edges_new.Weight_y
+        edges_combined = edges_new[['Source', 'Target', 'Weight']]
+        with open(cwd + "/data/gephi/edges_combined.pickle", "wb") as f:
+            pickle.dump(edges_combined, f)
+        edges_combined.to_csv(cwd + '/data/gephi/edges_combined.csv', sep=';', index=False)
+
+# table_keywords.shape 6337  , 7341  ,
+# edges_combined.shape 12072 , 21020 ,
+# nodes_cbomined.shape 2349  , 3659  ,
