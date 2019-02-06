@@ -92,3 +92,12 @@ def create_keywords_table(keywords_list):
                     print('something went wrong')  # TODO: delete
     return df_keywords
 
+
+# clean nodes_combined
+nodes_c = nodes_combined[['id', 'value', 'section_y']]
+colnames = ['id', 'value'] + [str(i) for i in range(1,13)]
+nodes_c.columns = colnames
+nodes_combined = nodes_c[['id', 'value', '12']]
+nodes_combined.columns = ['id', 'value', 'section']
+
+nodes_combined.section.isnull().value_counts()
