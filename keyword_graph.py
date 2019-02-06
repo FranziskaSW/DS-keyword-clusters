@@ -6,6 +6,7 @@ import numpy as np
 from itertools import chain
 from itertools import combinations
 import os
+import math
 
 global cwd
 cwd = os.getcwd()
@@ -192,6 +193,7 @@ def edges_nodes(article_keywords, table_keywords, min_weight):
     t_1 = t[t.id.isin(ids_1)]
     t_2 = t[t.id.isin(ids_2)]
     t_3 = t_1.merge(t_2, on=list(t_1), how='outer')
+    t_3.columns = ['id', 'Section', 'Label']
     return e, t_3
 
 
@@ -213,6 +215,25 @@ def update_tables(df):
         pickle.dump(table_keywords, f)
     return table_keywords, table_sections
 
+
+def edge_weight(edges_row, table_keywords):
+    # P(Trump | Inaugurations) = P(Trump, Inaugurations) / P(Inaugurations)
+    p1 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Target].counts).get_values()[0]  # 0.536082
+    # P(Inaugurations | Trump) = P(Trump, Inaugurations) / P(Trump)
+    p2 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Source].counts).get_values()[0]
+    p = (p1 + p2)*100
+    return p
+
+def reduce_edges(nodes_lu, edges, percentage):
+    edges_new = pd.DataFrame(columns=['Source', 'Target', 'Weight'])
+    for keyword_id in nodes_lu.id:
+        edges_of_id = edges[((edges.Source == keyword_id) | (edges.Target == keyword_id))]
+        max_edges = math.ceil(percentage*edges_of_id.shape[0])
+        edges_20 = edges_of_id.sort_values(by='Weight', ascending=False)[:max_edges]
+        edges_new = pd.concat([edges_new, edges_20], ignore_index=True)
+        edges_new = edges_new.drop_duplicates(['Source', 'Target'])
+
+    return edges_new
 
 
 def main():
@@ -265,7 +286,7 @@ def main():
 
     df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
 
-    edges, nodes = edges_nodes(df.keywords, table_keywords, 3)
+    edges, nodes = edges_nodes(df.keywords, table_keywords, 5)
 
     # # calculate Davids Weight "mutual weight" not just count
     # f = edges.loc[1]
@@ -273,14 +294,23 @@ def main():
     # table_keywords[table_keywords.id == f.Target]  # Inaugurations   - 194
     # f.Counts                                       # combi           - 104
 
-    def edge_weight(edges_row, table_keywords):
-        # P(Trump | Inaugurations) = P(Trump, Inaugurations) / P(Inaugurations)
-        p1 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Target].counts).get_values()[0]  # 0.536082
-        # P(Inaugurations | Trump) = P(Trump, Inaugurations) / P(Trump)
-        p2 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Source].counts).get_values()[0]
-        p = (p1 + p2)*100
-        return p
 
     edges['Weight'] = edges.apply(lambda x: edge_weight(x, table_keywords), axis=1)
+    edges = edges[['Source', 'Target', 'Weight']]
+
+    # now only keep best 20% of node
+    # edges_20 = reduce_edges(nodes, edges, 0.2)
+
+    # now only the nodes that have section specified
+    # nodes_wo = nodes[~(nodes.section == 0)]
+    edges = reduce_edges(nodes, edges, 0.17)
+
+    nodes.to_csv(cwd + '/data/gephi/02_nodes_comb.csv', sep=';', index=False)
+    edges.to_csv(cwd + '/data/gephi/02_edges_small.csv', sep=';', index=False)
+
+    with open(cwd + "/data/gephi/02_edges_small_" + year + ".pickle", "wb") as f:
+        pickle.dump(edges, f)
+    with open(cwd + "/data/gephi/02_nodes_comb_" + year + ".pickle", "wb") as f:
+        pickle.dump(nodes, f)
 
     # TODO: which edges to keep - the most important 20% per node
