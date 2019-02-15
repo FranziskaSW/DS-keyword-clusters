@@ -391,9 +391,6 @@ def main():
     #     articles = response['docs']
     #     df = pd.DataFrame(articles)
     #
-        with open(cwd + "/data/keywords/table_keywords_2018_01.pickle", "rb") as f:
-            table_big = pickle.load(f)
-
     for m in range(2, 4):
         month = str(m)
         if len(month) == 1:
@@ -401,33 +398,40 @@ def main():
         suffix = year + "_" + month
         print(suffix)
 
-        # with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
-        #     response = pickle.load(f)
-        #     articles = response['docs']
-        #     df_new = pd.DataFrame(articles)
-        # df = df_new # = pd.concat([df, df_new], ignore_index=True)
-        # print(df.shape)
-        #
-        # df = df[~(df.word_count.isnull())]
-        # df['word_count'] = df.word_count.apply(lambda x: int(x))
-        # df = df[df.word_count > 20]
-        # df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
-        # df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
-        # table_keywords_partial = create_keywords_table_partial(df)
-        # print(table_keywords_partial.shape)
-        # with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "wb") as f:
-        #     pickle.dump(table_keywords_partial, f)
+        with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
+            response = pickle.load(f)
+            articles = response['docs']
+            df_new = pd.DataFrame(articles)
+        df = df_new # = pd.concat([df, df_new], ignore_index=True)
+        print(df.shape)
 
-        with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "rb") as f:
-            table_keywords_partial = pickle.load(f)
+        df = df[~(df.word_count.isnull())]
+        df['word_count'] = df.word_count.apply(lambda x: int(x))
+        df = df[df.word_count > 20]
+        df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
+        df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
+
+        table_keywords_partial = create_keywords_table_partial(df)
+        print(table_keywords_partial.shape)
+        with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "wb") as f:
+            pickle.dump(table_keywords_partial, f)
+
+        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "rb") as f:
+            table_big = pickle.load(f)
 
         print(table_big.shape, table_keywords_partial.shape)
+        table_big = table_big[table_big.counts >= 2]
+        table_keywords_partial = table_keywords_partial[table_keywords_partial.counts >= 2]
+
         table_big = merge_keyword_tables(table_big, table_keywords_partial)
-        17:42
 
+        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "wb") as f:
+            pickle.dump(table_big, f)
 
+        # 17:42 - 17:59 - table_big is keywords 2018-01 - 2018-03
 
-    table_keywords, table_sections = update_tables(df)
+    table_keywords = table_big[1:]
+    table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
 
     # t = table_keywords[table_keywords.counts >= 10]
     # t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
@@ -447,20 +451,52 @@ def main():
     # t.newsdesk.value_counts().shape
     #################################################################################
 
+    with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
+        response = pickle.load(f)
+        articles = response['docs']
+        df = pd.DataFrame(articles)
+
+
+    for m in range(2, 4):
+        month = str(m)
+        if len(month) == 1:
+            month = '0' + month
+        suffix = year + "_" + month
+        print(suffix)
+
+        with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
+            response = pickle.load(f)
+            articles = response['docs']
+            df_new = pd.DataFrame(articles)
+        df = pd.concat([df, df_new], ignore_index=True)
+        print(df.shape)
+
+    df = df[~(df.word_count.isnull())]
+    df['word_count'] = df.word_count.apply(lambda x: int(x))
+    df = df[df.word_count > 20]
+    df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
+    df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
 
     df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
 
-    keywords_series = df.keywords
+    keywords = df.keywords
 
-    # keywords_18 =
-    # keywords_17 = keywords_series
-    keywords_16 = keywords_series
-
-    # combine keywords of the years
-    keywords = pd.concat([keywords_16, keywords_17, keywords_18], ignore_index=True)
+    # keywords_series = df.keywords
+    #
+    # # keywords_18 =
+    # # keywords_17 = keywords_series
+    # keywords_16 = keywords_series
+    #
+    # # combine keywords of the years
+    # keywords = pd.concat([keywords_16, keywords_17, keywords_18], ignore_index=True)
 
     edges, nodes = edges_nodes(keywords, table_keywords)
 
+    # TODO: overthink method
+    #       especially the 20% thing. maybe it deletes nodes that were prior connected to something else already.
+    #       draw sketch like who is in network with whom. if b is in 20% of b, but has only less than 1 connection
+    #       -- want to delete b, has to be replaced with something else?
+    #       especially not allowed to stay in edge, but be deleted in nodes
     # remove keywords/nodes that are tagged to a section that appears less than 10(?) times
     sec = nodes.Section.value_counts()
     sec = sec[sec >= 50].index.tolist()
