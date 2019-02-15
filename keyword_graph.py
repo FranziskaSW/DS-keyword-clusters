@@ -37,6 +37,10 @@ def extr_newsdesk(field):
         newsdesk = field.split(' / ')[0]
     except AttributeError:
         newsdesk = '*DUMMY*'
+    try:
+        newsdesk = newsdesk.split(' | ')[0]
+    except AttributeError:
+        newsdesk = '*DUMMY2*'
     return newsdesk
 
 
@@ -69,7 +73,7 @@ def section2id(field, table_sections):
     return id
 
 
-def create_keywords_table(df, table):
+def create_keywords_table_old(df, table):
     keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
     sections = df.section  # TODO: or the other feature
     table = table[table.counts >= 3]
@@ -111,6 +115,128 @@ def create_keywords_table(df, table):
     table['section'] = table.section_count.apply(lambda x: section_max(x))
     return table
 
+
+def create_keywords_table(df, table):
+    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
+    sections = df.section  # TODO: or the other feature
+
+    for k_list, section_id in zip(keywords_list, sections):
+        if len(k_list) == 0:  # if this article has no keywords, do nothing
+            pass
+        else:
+            for k_word in k_list:  # for keyword in keyword-list find id of table
+                keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
+
+                if len(keyword_id) == 0:  # if id doesnt exist, create new entry
+                    next_id = max(table.id) + 1
+                    section_dict = {section_id: 1}
+                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
+                    table = table.append(new_row, ignore_index=True)
+
+                elif len(keyword_id) == 1:  # if id already exists, +1 count and +1 for section
+                    # increase count of keyword by one
+                    keyword_id = keyword_id._get_values(0)
+                    table.loc[table.id == keyword_id, 'counts'] += 1
+
+                    # increase count of section by, but only if it was not section == 0
+                    if section_id == 0:
+                        pass
+                    else:
+                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+                        try:  # is there already a value to this section_id?
+                            value = section_dict[section_id]
+                        except KeyError:  # could not find this section_id
+                            value = 0
+                        section_dict.update({section_id: value + 1})
+                        try:  # somehow did not work when the new section_dict was longer than the old one...
+                              # it overwrites the column but still gives an error message
+                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
+                        except ValueError:
+                            pass
+
+    table['section'] = table.section_count.apply(lambda x: section_max(x))
+    return table
+
+
+def create_keywords_table_partial(df):
+    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
+    sections = df.section  # TODO: or the other feature
+    table = pd.DataFrame([[0, '*NAME*', '*VALUE*', 0]], columns=['id', 'name', 'value', 'counts'])
+
+    for k_list, section_id in zip(keywords_list, sections):
+        if len(k_list) == 0:  # if this article has no keywords, do nothing
+            pass
+        else:
+            for k_word in k_list:  # for keyword in keyword-list find id of table
+                keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
+
+                if len(keyword_id) == 0:  # if id doesnt exist, create new entry
+                    next_id = max(table.id) + 1
+                    section_dict = {section_id: 1}
+                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
+                    table = table.append(new_row, ignore_index=True)
+
+                elif len(keyword_id) == 1:  # if id already exists, +1 count and +1 for section
+                    # increase count of keyword by one
+                    keyword_id = keyword_id._get_values(0)
+                    table.loc[table.id == keyword_id, 'counts'] += 1
+
+                    # increase count of section by, but only if it was not section == 0
+                    if section_id == 0:
+                        pass
+                    else:
+                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+                        try:  # is there already a value to this section_id?
+                            value = section_dict[section_id]
+                        except KeyError:  # could not find this section_id
+                            value = 0
+                        section_dict.update({section_id: value + 1})
+                        try:  # somehow did not work when the new section_dict was longer than the old one...
+                              # it overwrites the column but still gives an error message
+                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
+                        except ValueError:
+                            pass
+    return table
+
+
+def merge_keyword_tables(table_big, table_small):
+
+    for idx_small in range(1, table_small.shape[0]):
+        row_big = table_big[(table_big.value == table_small.loc[idx_small, 'value']) &
+                                  (table_big.name == table_small.loc[idx_small, 'name'])]
+
+        if row_big.shape[0] == 0:
+            # this idx_small does not exist yet
+            new_row = table_small.loc[[idx_small]]
+            new_row.id = table_big.id.max() + 1
+            table_big = table_big.append(new_row, ignore_index=True)
+        else:
+            # update row of table_big
+            idx_big = row_big.index.get_values()[0]
+
+            section_dict_small = table_small.loc[idx_small, 'section_count']
+            section_dict_big = row_big.section_count[idx_big]
+
+            if len(section_dict_small) <= len(section_dict_big):
+                dict_s = section_dict_small
+                dict_b = section_dict_big
+            else:
+                dict_s = section_dict_big
+                dict_b = section_dict_small
+
+            for section in dict_s.keys():
+                value_small = dict_s[section]
+                try:
+                    value_big = dict_b[section]
+                except KeyError:
+                    value_big = 0
+                dict_b.update({section: value_small + value_big})
+            table_big.section_count[idx_big] = dict_b
+            table_big.counts[idx_big] += table_small.counts[idx_small]
+
+    return table_big
 
 def create_section_table(df, table):
     sections = df.section_name
@@ -252,35 +378,57 @@ def reduce_edges(nodes, edges, percentage, min_edges):
 
 def main():
 
-    year = '2016'
+    year = '2018'
     with open(cwd + "/data/table_sections_16-18.pickle", "rb") as f:
         table_sections = pickle.load(f)
-    with open(cwd + "/data/table_keywords_16-18.pickle", "rb") as f:
-        table_keywords = pickle.load(f)
+
+    # with open(cwd + "/data/table_keywords_16-18.pickle", "rb") as f:
+    #     table_keywords = pickle.load(f)
 
 
-    with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
-        response = pickle.load(f)
-        articles = response['docs']
-        df = pd.DataFrame(articles)
+    # with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
+    #     response = pickle.load(f)
+    #     articles = response['docs']
+    #     df = pd.DataFrame(articles)
+    #
+        with open(cwd + "/data/keywords/table_keywords_2018_01.pickle", "rb") as f:
+            table_big = pickle.load(f)
 
-    for m in range(2, 13):
+    for m in range(2, 4):
         month = str(m)
         if len(month) == 1:
             month = '0' + month
-        print(month)
+        suffix = year + "_" + month
+        print(suffix)
 
-        with open(cwd + "/data/archive/" + year + "_" + month + ".pickle", "rb") as f:
-            response = pickle.load(f)
-            articles = response['docs']
-            df_new = pd.DataFrame(articles)
-        df = pd.concat([df, df_new], ignore_index=True)
+        # with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
+        #     response = pickle.load(f)
+        #     articles = response['docs']
+        #     df_new = pd.DataFrame(articles)
+        # df = df_new # = pd.concat([df, df_new], ignore_index=True)
+        # print(df.shape)
+        #
+        # df = df[~(df.word_count.isnull())]
+        # df['word_count'] = df.word_count.apply(lambda x: int(x))
+        # df = df[df.word_count > 20]
+        # df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
+        # df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
+        # table_keywords_partial = create_keywords_table_partial(df)
+        # print(table_keywords_partial.shape)
+        # with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "wb") as f:
+        #     pickle.dump(table_keywords_partial, f)
 
-    df = df[~(df.word_count.isnull())]
-    df['word_count'] = df.word_count.apply(lambda x: int(x))
-    df = df[df.word_count > 20]
-    df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
-    df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
+        with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "rb") as f:
+            table_keywords_partial = pickle.load(f)
+
+        print(table_big.shape, table_keywords_partial.shape)
+        table_big = merge_keyword_tables(table_big, table_keywords_partial)
+        17:42
+
+
+
+    table_keywords, table_sections = update_tables(df)
+
     # t = table_keywords[table_keywords.counts >= 10]
     # t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
     # table_keywords = t
