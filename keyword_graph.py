@@ -40,10 +40,6 @@ def extr_newsdesk(field):
     return newsdesk
 
 
-f = t.section_count[0]
-sum(f.values())
-table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
-
 def section_max(field):
     try:
         max_val = pd.Series(field).max()
@@ -105,7 +101,8 @@ def create_keywords_table(df, table):
                         except KeyError:  # could not find this section_id
                             value = 0
                         section_dict.update({section_id: value + 1})
-                        try:  # somehow did not work when the new section_dict was longer than the old one... it overwrites the column but still gives an error message
+                        try:  # somehow did not work when the new section_dict was longer than the old one...
+                              # it overwrites the column but still gives an error message
                             table.loc[table.id == keyword_id, 'section_count'] = section_dict
                         except ValueError:
                             pass
@@ -175,17 +172,17 @@ def keyword_edges(field):
     return edges
 
 
-def edges_nodes(article_keywords, table_keywords, min_weight):
+def edges_nodes(article_keywords, table_keywords):
     edges_list = article_keywords.apply(lambda x: keyword_edges(x)).tolist()
     edges_df = pd.Series(list(chain.from_iterable(edges_list)))
-    edges_weights = edges_df.value_counts()
+    edges_counts = edges_df.value_counts()
 
-    edges = pd.DataFrame([x.split(',') for x in edges_weights.index], columns=['keyword_1', 'keyword_2'])
+    edges = pd.DataFrame([x.split(',') for x in edges_counts.index], columns=['keyword_1', 'keyword_2'])
     edges['Source'] = edges.keyword_1.apply(lambda x: int(x))
     edges['Target'] = edges.keyword_2.apply(lambda x: int(x))
-    edges['Counts'] = edges_weights.reset_index()[0]
-
-    e = edges[edges.Counts >= min_weight][['Source', 'Target', 'Counts']]
+    edges['Counts'] = edges_counts.reset_index()[0]
+    edges['Weight'] = edges.apply(lambda x: edge_weight(x, table_keywords), axis=1)
+    e = edges[['Source', 'Target', 'Weight']]
 
     t = table_keywords[['id', 'section', 'value']]
     ids_1 = e.Source.value_counts().index.get_values().tolist()
@@ -217,6 +214,13 @@ def update_tables(df):
 
 
 def edge_weight(edges_row, table_keywords):
+
+    # # calculate Davids Weight "mutual weight" not just count
+    # f = edges.loc[1]
+    # table_keywords[table_keywords.id == f.Source]  # Trump, Donald J - 19382
+    # table_keywords[table_keywords.id == f.Target]  # Inaugurations   - 194
+    # f.Counts                                       # combi           - 104
+
     # P(Trump | Inaugurations) = P(Trump, Inaugurations) / P(Inaugurations)
     p1 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Target].counts).get_values()[0]  # 0.536082
     # P(Inaugurations | Trump) = P(Trump, Inaugurations) / P(Trump)
@@ -224,24 +228,34 @@ def edge_weight(edges_row, table_keywords):
     p = (p1 + p2)*100
     return p
 
-def reduce_edges(nodes_lu, edges, percentage):
+def reduce_edges(nodes, edges, percentage, min_edges):
     edges_new = pd.DataFrame(columns=['Source', 'Target', 'Weight'])
-    for keyword_id in nodes_lu.id:
+    drop_ids = []
+    for keyword_id in nodes.id:
         edges_of_id = edges[((edges.Source == keyword_id) | (edges.Target == keyword_id))]
         max_edges = math.ceil(percentage*edges_of_id.shape[0])
-        edges_20 = edges_of_id.sort_values(by='Weight', ascending=False)[:max_edges]
-        edges_new = pd.concat([edges_new, edges_20], ignore_index=True)
-        edges_new = edges_new.drop_duplicates(['Source', 'Target'])
+        if max_edges >= min_edges:
+            edges_20 = edges_of_id.sort_values(by='Weight', ascending=False)[:max_edges]
+            edges_new = pd.concat([edges_new, edges_20], ignore_index=True)
+            edges_new = edges_new.drop_duplicates(['Source', 'Target'])
+        else:
+            drop_ids.append(keyword_id)
 
-    return edges_new
+    mask1 = edges_new.Source.apply(lambda x: x not in drop_ids)
+    mask2 = edges_new.Target.apply(lambda x: x not in drop_ids)
+
+    edges_n = edges_new[(mask1 & mask2)]
+    nodes_n = nodes[nodes.id.apply(lambda x: x not in drop_ids)]
+
+    return edges_n, nodes_n
 
 
 def main():
 
-    year = '2018'
-    with open(cwd + "/data/table_sections_2018.pickle", "rb") as f:
+    year = '2016'
+    with open(cwd + "/data/table_sections_16-18.pickle", "rb") as f:
         table_sections = pickle.load(f)
-    with open(cwd + "/data/table_keywords_2018.pickle", "rb") as f:
+    with open(cwd + "/data/table_keywords_16-18.pickle", "rb") as f:
         table_keywords = pickle.load(f)
 
 
@@ -265,12 +279,14 @@ def main():
     df = df[~(df.word_count.isnull())]
     df['word_count'] = df.word_count.apply(lambda x: int(x))
     df = df[df.word_count > 20]
-    df['newsdesk'] = df.news_desk.apply(lambda x: extr_newsdesk(x))
     df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
     df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
-    t = table_keywords[table_keywords.counts >= 10]
-    t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
-    table_keywords = t
+    # t = table_keywords[table_keywords.counts >= 10]
+    # t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
+    # table_keywords = t
+
+    # with open(cwd + "/data/table_keywords_16-18_forgraph.pickle", "wb") as f:
+    #     pickle.dump(table_keywords, f)
 
     ###################### continue another time ####################################
     # to analyse if section or news desk is the important label
@@ -286,31 +302,44 @@ def main():
 
     df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
 
-    edges, nodes = edges_nodes(df.keywords, table_keywords, 5)
+    keywords_series = df.keywords
 
-    # # calculate Davids Weight "mutual weight" not just count
-    # f = edges.loc[1]
-    # table_keywords[table_keywords.id == f.Source]  # Trump, Donald J - 19382
-    # table_keywords[table_keywords.id == f.Target]  # Inaugurations   - 194
-    # f.Counts                                       # combi           - 104
+    # keywords_18 =
+    # keywords_17 = keywords_series
+    keywords_16 = keywords_series
 
+    # combine keywords of the years
+    keywords = pd.concat([keywords_16, keywords_17, keywords_18], ignore_index=True)
 
-    edges['Weight'] = edges.apply(lambda x: edge_weight(x, table_keywords), axis=1)
-    edges = edges[['Source', 'Target', 'Weight']]
+    edges, nodes = edges_nodes(keywords, table_keywords)
 
-    # now only keep best 20% of node
-    # edges_20 = reduce_edges(nodes, edges, 0.2)
+    # remove keywords/nodes that are tagged to a section that appears less than 10(?) times
+    sec = nodes.Section.value_counts()
+    sec = sec[sec >= 50].index.tolist()
+    len(sec)
+    mask = nodes.Section.apply(lambda x: x in sec)
+    nodes_freq = nodes[mask]
+
+    # reduce_edges
+    # only keep 20% per node
+    # remove nodes that would have less than 3 edges
 
     # now only the nodes that have section specified
     # nodes_wo = nodes[~(nodes.section == 0)]
-    edges = reduce_edges(nodes, edges, 0.17)
 
-    nodes.to_csv(cwd + '/data/gephi/02_nodes_comb.csv', sep=';', index=False)
-    edges.to_csv(cwd + '/data/gephi/02_edges_small.csv', sep=';', index=False)
+    edges_20, nodes_20 = reduce_edges(nodes_freq, edges, 0.1, 5)
 
-    with open(cwd + "/data/gephi/02_edges_small_" + year + ".pickle", "wb") as f:
-        pickle.dump(edges, f)
-    with open(cwd + "/data/gephi/02_nodes_comb_" + year + ".pickle", "wb") as f:
-        pickle.dump(nodes, f)
+    s = nodes_20.Section.value_counts()
+    s = s.reset_index()
 
-    # TODO: which edges to keep - the most important 20% per node
+    # TODO: why do I have so many nodes in edges, that dont appear in nodes?
+
+    edges_20.shape
+    nodes_20.shape
+    nodes_20.to_csv(cwd + '/data/gephi/03_nodes_10-5.csv', sep=';', index=False)
+    edges_20.to_csv(cwd + '/data/gephi/03_edges_10-5.csv', sep=';', index=False)
+
+    with open(cwd + "/data/gephi/03_edges_16-18.pickle", "wb") as f:
+        pickle.dump(edges_20, f)
+    with open(cwd + "/data/gephi/03_nodes_16-18.pickle", "wb") as f:
+        pickle.dump(nodes_20, f)

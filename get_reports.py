@@ -194,7 +194,7 @@ def update_tables(df):
 
 
 def main():
-    year = '2017'
+    year = '2016'
     for m in range(1,13):
         month = str(m)
 
@@ -235,3 +235,9 @@ def main():
 #       [ ] combine sections
 #       [ ] delete nodes without section (0)?
 #       [ ] only keep the 8 most common sections - because those are the ones that have a tag, but maybe then the graph is more difficult to draw
+
+
+with open(cwd + "/data/table_keywords_16-18.pickle", "wb") as f:
+      pickle.dump(table_keywords, f)
+with open(cwd + "/data/table_sections_16-18.pickle", "wb") as f:
+      pickle.dump(table_sections, f)
