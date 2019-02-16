@@ -45,6 +45,12 @@ def extr_newsdesk(field):
 
 
 def section_max(field):
+
+    try:
+        del field[0] # because uncategorized does not add more information. only choose among categorized tags
+    except KeyError:
+        pass
+
     try:
         max_val = pd.Series(field).max()
         if max_val >= 0.5*sum(field.values()):
@@ -72,91 +78,91 @@ def section2id(field, table_sections):
 
     return id
 
-
-def create_keywords_table_old(df, table):
-    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
-    sections = df.section  # TODO: or the other feature
-    table = table[table.counts >= 3]
-
-    for k_list, section_id in zip(keywords_list, sections):
-        if len(k_list) > 0:
-            for k_word in k_list:
-                keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
-
-                if len(keyword_id) == 0:
-                    next_id = max(table.id) + 1
-                    section_dict = {section_id: 1}
-                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
-                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
-                    table = table.append(new_row, ignore_index=True)
-
-                elif len(keyword_id) == 1:
-                    # increase count of keyword by one
-                    keyword_id = keyword_id._get_values(0)
-                    table.loc[table.id == keyword_id, 'counts'] += 1
-
-                    # increase count of section by, but only if it was not section == 0
-                    if section_id == 0:
-                        pass
-                    else:
-                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
-                        try:  # is there already a value to this section_id?
-                            value = section_dict[section_id]
-                        except KeyError:  # could not find this section_id
-                            value = 0
-                        section_dict.update({section_id: value + 1})
-                        try:  # somehow did not work when the new section_dict was longer than the old one...
-                              # it overwrites the column but still gives an error message
-                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
-                        except ValueError:
-                            pass
-                else:
-                    print('something went wrong')  # TODO: delete
-    table['section'] = table.section_count.apply(lambda x: section_max(x))
-    return table
-
-
-def create_keywords_table(df, table):
-    keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
-    sections = df.section  # TODO: or the other feature
-
-    for k_list, section_id in zip(keywords_list, sections):
-        if len(k_list) == 0:  # if this article has no keywords, do nothing
-            pass
-        else:
-            for k_word in k_list:  # for keyword in keyword-list find id of table
-                keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
-
-                if len(keyword_id) == 0:  # if id doesnt exist, create new entry
-                    next_id = max(table.id) + 1
-                    section_dict = {section_id: 1}
-                    new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
-                                           columns=['id', 'name', 'value', 'counts', 'section_count'])
-                    table = table.append(new_row, ignore_index=True)
-
-                elif len(keyword_id) == 1:  # if id already exists, +1 count and +1 for section
-                    # increase count of keyword by one
-                    keyword_id = keyword_id._get_values(0)
-                    table.loc[table.id == keyword_id, 'counts'] += 1
-
-                    # increase count of section by, but only if it was not section == 0
-                    if section_id == 0:
-                        pass
-                    else:
-                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
-                        try:  # is there already a value to this section_id?
-                            value = section_dict[section_id]
-                        except KeyError:  # could not find this section_id
-                            value = 0
-                        section_dict.update({section_id: value + 1})
-                        try:  # somehow did not work when the new section_dict was longer than the old one...
-                              # it overwrites the column but still gives an error message
-                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
-                        except ValueError:
-                            pass
-
-    table['section'] = table.section_count.apply(lambda x: section_max(x))
-    return table
+#
+# def create_keywords_table_old(df, table):
+#     keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
+#     sections = df.section  # TODO: or the other feature
+#     table = table[table.counts >= 3]
+#
+#     for k_list, section_id in zip(keywords_list, sections):
+#         if len(k_list) > 0:
+#             for k_word in k_list:
+#                 keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
+#
+#                 if len(keyword_id) == 0:
+#                     next_id = max(table.id) + 1
+#                     section_dict = {section_id: 1}
+#                     new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+#                                            columns=['id', 'name', 'value', 'counts', 'section_count'])
+#                     table = table.append(new_row, ignore_index=True)
+#
+#                 elif len(keyword_id) == 1:
+#                     # increase count of keyword by one
+#                     keyword_id = keyword_id._get_values(0)
+#                     table.loc[table.id == keyword_id, 'counts'] += 1
+#
+#                     # increase count of section by, but only if it was not section == 0
+#                     if section_id == 0:
+#                         pass
+#                     else:
+#                         section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+#                         try:  # is there already a value to this section_id?
+#                             value = section_dict[section_id]
+#                         except KeyError:  # could not find this section_id
+#                             value = 0
+#                         section_dict.update({section_id: value + 1})
+#                         try:  # somehow did not work when the new section_dict was longer than the old one...
+#                               # it overwrites the column but still gives an error message
+#                             table.loc[table.id == keyword_id, 'section_count'] = section_dict
+#                         except ValueError:
+#                             pass
+#                 else:
+#                     print('something went wrong')  # TODO: delete
+#     table['section'] = table.section_count.apply(lambda x: section_max(x))
+#     return table
+#
+# #
+# def create_keywords_table(df, table):
+#     keywords_list = df.keywords.apply(lambda x: extr_keywords_step1(x))
+#     sections = df.section  # TODO: or the other feature
+#
+#     for k_list, section_id in zip(keywords_list, sections):
+#         if len(k_list) == 0:  # if this article has no keywords, do nothing
+#             pass
+#         else:
+#             for k_word in k_list:  # for keyword in keyword-list find id of table
+#                 keyword_id = table.id[(table.value == k_word[1]) & (table.name == k_word[0])]
+#
+#                 if len(keyword_id) == 0:  # if id doesnt exist, create new entry
+#                     next_id = max(table.id) + 1
+#                     section_dict = {section_id: 1}
+#                     new_row = pd.DataFrame([[next_id, k_word[0], k_word[1], 1, section_dict]],
+#                                            columns=['id', 'name', 'value', 'counts', 'section_count'])
+#                     table = table.append(new_row, ignore_index=True)
+#
+#                 elif len(keyword_id) == 1:  # if id already exists, +1 count and +1 for section
+#                     # increase count of keyword by one
+#                     keyword_id = keyword_id._get_values(0)
+#                     table.loc[table.id == keyword_id, 'counts'] += 1
+#
+#                     # increase count of section by, but only if it was not section == 0
+#                     if section_id == 0:
+#                         pass
+#                     else:
+#                         section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+#                         try:  # is there already a value to this section_id?
+#                             value = section_dict[section_id]
+#                         except KeyError:  # could not find this section_id
+#                             value = 0
+#                         section_dict.update({section_id: value + 1})
+#                         try:  # somehow did not work when the new section_dict was longer than the old one...
+#                               # it overwrites the column but still gives an error message
+#                             table.loc[table.id == keyword_id, 'section_count'] = section_dict
+#                         except ValueError:
+#                             pass
+#
+#     table['section'] = table.section_count.apply(lambda x: section_max(x))
+#     return table
 
 
 def create_keywords_table_partial(df):
@@ -164,7 +170,10 @@ def create_keywords_table_partial(df):
     sections = df.section  # TODO: or the other feature
     table = pd.DataFrame([[0, '*NAME*', '*VALUE*', 0]], columns=['id', 'name', 'value', 'counts'])
 
-    for k_list, section_id in zip(keywords_list, sections):
+    for k_list, section_id, idx in zip(keywords_list, sections, range(0, sections.shape[0])):
+        if idx%100 == 0:
+            print(idx)
+
         if len(k_list) == 0:  # if this article has no keywords, do nothing
             pass
         else:
@@ -180,30 +189,39 @@ def create_keywords_table_partial(df):
 
                 elif len(keyword_id) == 1:  # if id already exists, +1 count and +1 for section
                     # increase count of keyword by one
+
                     keyword_id = keyword_id._get_values(0)
+
                     table.loc[table.id == keyword_id, 'counts'] += 1
 
                     # increase count of section by, but only if it was not section == 0
-                    if section_id == 0:
-                        pass
-                    else:
-                        section_dict = table.section_count[table.id == keyword_id]._get_values(0)
-                        try:  # is there already a value to this section_id?
-                            value = section_dict[section_id]
-                        except KeyError:  # could not find this section_id
-                            value = 0
-                        section_dict.update({section_id: value + 1})
-                        try:  # somehow did not work when the new section_dict was longer than the old one...
-                              # it overwrites the column but still gives an error message
-                            table.loc[table.id == keyword_id, 'section_count'] = section_dict
-                        except ValueError:
-                            pass
+                    section_dict = table.section_count[table.id == keyword_id]._get_values(0)
+
+                    try:  # is there already a value to this section_id?
+                        value = section_dict[section_id]
+                    except KeyError:  # could not find this section_id
+                        value = 0
+
+                    section_dict.update({section_id: value + 1})
+                    table.section_count[id] = section_dict
     return table
+
+#
+# v = table.section_count.apply(lambda x: sum(x.values()))
+#
+# (v <= table.counts).value_counts
+# table.section_count.apply(lambda x: x.drop_key)
+# table_keywords[~(v == table_keywords.counts)][['counts', 'section_count']] # only some have section 0
+# table_keywords[(v == table_keywords.counts)][['counts', 'section_count']] # all of them have section 0
+# # TODO: table_keywords count and section_count does not fit! why??? because of if section == 0 count +1 but not section count +1
+#
+
 
 
 def merge_keyword_tables(table_big, table_small):
 
-    for idx_small in range(1, table_small.shape[0]):
+    for idx_small in table_small.index:  # we're only interested in getting through all the columns, it doesnt matter
+        # to us which id the keyword had in the small table
         row_big = table_big[(table_big.value == table_small.loc[idx_small, 'value']) &
                                   (table_big.name == table_small.loc[idx_small, 'name'])]
 
@@ -237,6 +255,7 @@ def merge_keyword_tables(table_big, table_small):
             table_big.counts[idx_big] += table_small.counts[idx_small]
 
     return table_big
+
 
 def create_section_table(df, table):
     sections = df.section_name
@@ -298,82 +317,148 @@ def keyword_edges(field):
     return edges
 
 
-def edges_nodes(article_keywords, table_keywords):
-    edges_list = article_keywords.apply(lambda x: keyword_edges(x)).tolist()
-    edges_df = pd.Series(list(chain.from_iterable(edges_list)))
-    edges_counts = edges_df.value_counts()
-
-    edges = pd.DataFrame([x.split(',') for x in edges_counts.index], columns=['keyword_1', 'keyword_2'])
-    edges['Source'] = edges.keyword_1.apply(lambda x: int(x))
-    edges['Target'] = edges.keyword_2.apply(lambda x: int(x))
-    edges['Counts'] = edges_counts.reset_index()[0]
-    edges['Weight'] = edges.apply(lambda x: edge_weight(x, table_keywords), axis=1)
-    e = edges[['Source', 'Target', 'Weight']]
-
-    t = table_keywords[['id', 'section', 'value']]
-    ids_1 = e.Source.value_counts().index.get_values().tolist()
-    ids_2 = e.Target.value_counts().index.get_values().tolist()
-    t_1 = t[t.id.isin(ids_1)]
-    t_2 = t[t.id.isin(ids_2)]
-    t_3 = t_1.merge(t_2, on=list(t_1), how='outer')
-    t_3.columns = ['id', 'Section', 'Label']
-    return e, t_3
-
-
-def update_tables(df):
-    with open(cwd + "/data/table_sections.pickle", "rb") as f:
-        table_sections = pickle.load(f)
-    table_sections = create_section_table(df, table_sections)
-    with open(cwd + "/data/table_sections.pickle", "wb") as f:
-        pickle.dump(table_sections, f)
-    df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
-
-    with open(cwd + "/data/table_keywords.pickle", "rb") as f:
-        table_keywords = pickle.load(f)
-
-    # table_keywords = pd.DataFrame([[0, '*name*', '*value*', 0]], columns=['id', 'name', 'value', 'counts'])
-
-    table_keywords = create_keywords_table(df, table_keywords)
-    with open(cwd + "/data/table_keywords.pickle", "wb") as f:
-        pickle.dump(table_keywords, f)
-    return table_keywords, table_sections
-
-
 def edge_weight(edges_row, table_keywords):
-
     # # calculate Davids Weight "mutual weight" not just count
     # f = edges.loc[1]
     # table_keywords[table_keywords.id == f.Source]  # Trump, Donald J - 19382
     # table_keywords[table_keywords.id == f.Target]  # Inaugurations   - 194
     # f.Counts                                       # combi           - 104
 
+    # TODO: table_keywords.count is wrong! I don't want how often the keyword appears (in 2 articles), but how often it appears
+    #       in a tuple of keywords (4, if both of the two articles had 3 keywords)
+
     # P(Trump | Inaugurations) = P(Trump, Inaugurations) / P(Inaugurations)
-    p1 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Target].counts).get_values()[0]  # 0.536082
+    p1 = (edges_row.prob - table_keywords[table_keywords.id == edges_row.Target].prob).get_values()[0]  # 0.536082
     # P(Inaugurations | Trump) = P(Trump, Inaugurations) / P(Trump)
-    p2 = (edges_row.Counts / table_keywords[table_keywords.id == edges_row.Source].counts).get_values()[0]
-    p = (p1 + p2)*100
+    p2 = (edges_row.prob - table_keywords[table_keywords.id == edges_row.Source].prob).get_values()[0]
+    p = (p1 + p2)
     return p
 
+# how often does 24660 appear in articles?
+table_keywords[table_keywords.id == 49]  # 9
+
+#how often does 24660 appear in edges?
+n[n.id == 49].counts # 28
+
+table_keywords_bu = table_keywords
+table_keywords = n
+
+def edges_nodes(article_keywords, table_keywords):
+    edges_list = article_keywords.apply(lambda x: keyword_edges(x)).tolist()  # each article has a list of keywords
+    edges_df = pd.Series(list(chain.from_iterable(edges_list)))  # write everything in one list
+    edges_counts = edges_df.value_counts()
+
+    edges = pd.DataFrame([x.split(',') for x in edges_counts.index], columns=['keyword_1', 'keyword_2'])
+    edges['Source'] = edges.keyword_1.apply(lambda x: int(x))
+    edges['Target'] = edges.keyword_2.apply(lambda x: int(x))
+    edges['Counts'] = edges_counts.reset_index()[0]
+
+    e = edges[['Source', 'Target', 'Counts']]
+    e_sum = e.Counts.sum()
+    e['prob'] = np.log(e.Counts/e_sum)
+
+    # how often got node connected? sum(edge*edge_count)
+    s = edges.Source.value_counts()
+    t = edges.Target.value_counts()
+    st = pd.merge(pd.DataFrame(s), pd.DataFrame(t), left_index=True, right_index=True, how='outer').fillna(0)
+    st['counts'] = st.Source + st.Target
+    n = st.reset_index()[['index', 'counts']]
+    n.columns = ['id', 'counts']  # like table_keywords, but not in how many articles keyword was used,
+                                  # but how many edges we get
+    n_sum = n.counts.sum()
+    n['prob'] = np.log(n.counts/n_sum)
+
+    e['Weight'] = edges[:1000].apply(lambda x: edge_weight(x, n), axis=1)
+
+    e.sort_values(by='Weight', ascending=False)
+
+    t = table_keywords[['id', 'section', 'value']]
+    ids_1 = e.Source.value_counts().index.get_values().tolist()  # unique ids in Source
+    ids_2 = e.Target.value_counts().index.get_values().tolist()  # unique ids in Target
+    mask = [any(y) for y in zip(t.id.isin(ids_1), t.id.isin(ids_2))]  # if id was either in Source or in Target or both
+    n = t[mask]
+    n.columns = ['id', 'Section', 'Label']
+
+    return e, n
+
+#
+# def update_tables(df):
+#     with open(cwd + "/data/table_sections.pickle", "rb") as f:
+#         table_sections = pickle.load(f)
+#     table_sections = create_section_table(df, table_sections)
+#     with open(cwd + "/data/table_sections.pickle", "wb") as f:
+#         pickle.dump(table_sections, f)
+#     df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
+#
+#     with open(cwd + "/data/table_keywords.pickle", "rb") as f:
+#         table_keywords = pickle.load(f)
+#
+#     # table_keywords = pd.DataFrame([[0, '*name*', '*value*', 0]], columns=['id', 'name', 'value', 'counts'])
+#
+#     table_keywords = create_keywords_table(df, table_keywords)
+#     with open(cwd + "/data/table_keywords.pickle", "wb") as f:
+#         pickle.dump(table_keywords, f)
+#     return table_keywords, table_sections
+
+
+
 def reduce_edges(nodes, edges, percentage, min_edges):
-    edges_new = pd.DataFrame(columns=['Source', 'Target', 'Weight'])
-    drop_ids = []
-    for keyword_id in nodes.id:
-        edges_of_id = edges[((edges.Source == keyword_id) | (edges.Target == keyword_id))]
+
+    s = edges.Source.value_counts()
+    t = edges.Target.value_counts()
+
+    st = pd.merge(pd.DataFrame(s), pd.DataFrame(t), left_index=True, right_index=True, how='outer').fillna(0)
+    st['counts'] = st.Source + st.Target
+
+    # drop nodes that don't have enough edges
+    mask = (st.counts > min_edges / percentage)
+    idx = st[mask].index.get_values().tolist()
+    drop_idx = st[~mask].index.get_values().tolist()
+    nodes_reduced = nodes[nodes.id.isin(idx)]
+
+    # drop edges where we had one of those nodes
+    mask = [all(tup) for tup in zip(edges.Source.isin(idx), edges.Target.isin(idx))]
+
+    e = edges[mask]
+
+    edges_reduced = pd.DataFrame(columns=['Source', 'Target', 'Weight'])
+    for keyword_id in nodes_reduced.id:
+        edges_of_id = e[((e.Source == keyword_id) | (e.Target == keyword_id))]
         max_edges = math.ceil(percentage*edges_of_id.shape[0])
-        if max_edges >= min_edges:
-            edges_20 = edges_of_id.sort_values(by='Weight', ascending=False)[:max_edges]
-            edges_new = pd.concat([edges_new, edges_20], ignore_index=True)
-            edges_new = edges_new.drop_duplicates(['Source', 'Target'])
-        else:
-            drop_ids.append(keyword_id)
+        edges_new = edges_of_id.sort_values(by='Weight', ascending=False)[:max_edges]
+        edges_reduced = pd.concat([edges_reduced, edges_new], ignore_index=True)
+        edges_reduced = edges_reduced.drop_duplicates(['Source', 'Target'])
 
-    mask1 = edges_new.Source.apply(lambda x: x not in drop_ids)
-    mask2 = edges_new.Target.apply(lambda x: x not in drop_ids)
+    return edges_reduced, nodes_reduced
 
-    edges_n = edges_new[(mask1 & mask2)]
-    nodes_n = nodes[nodes.id.apply(lambda x: x not in drop_ids)]
 
-    return edges_n, nodes_n
+def reduce_edges_2(nodes, edges, percentage, min_edges):
+
+    s = edges.Source.value_counts()
+    t = edges.Target.value_counts()
+
+    st = pd.merge(pd.DataFrame(s), pd.DataFrame(t), left_index=True, right_index=True, how='outer').fillna(0)
+    st['counts'] = st.Source + st.Target
+
+    # drop nodes that don't have enough edges
+    mask = (st.counts > min_edges / percentage)
+    idx = st[mask].index.get_values().tolist()
+    nodes_reduced = nodes[nodes.id.isin(idx)]
+
+    # drop edges where we had one of those nodes
+    mask = [all(tup) for tup in zip(edges.Source.isin(idx), edges.Target.isin(idx))]
+
+    e = edges[mask]
+
+    edges_reduced = pd.DataFrame(columns=['Source', 'Target', 'Weight'])
+    for keyword_id in nodes_reduced.id:
+        edges_of_id = e[((e.Source == keyword_id) | (e.Target == keyword_id))]
+        max_edges = math.ceil(percentage*edges_of_id.shape[0])
+        edges_new = edges_of_id.sort_values(by='Counts', ascending=False)[:max_edges]
+        edges_reduced = pd.concat([edges_reduced, edges_new], ignore_index=True)
+        edges_reduced = edges_reduced.drop_duplicates(['Source', 'Target'])
+
+    return edges_reduced, nodes_reduced
 
 
 def main():
@@ -382,57 +467,17 @@ def main():
     with open(cwd + "/data/table_sections_16-18.pickle", "rb") as f:
         table_sections = pickle.load(f)
 
-    # with open(cwd + "/data/table_keywords_16-18.pickle", "rb") as f:
-    #     table_keywords = pickle.load(f)
+    with open(cwd + "/data/keywords/table_keywords_2018_01.pickle", "rb") as f:
+        table_keywords = pickle.load(f)
 
 
-    # with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
-    #     response = pickle.load(f)
-    #     articles = response['docs']
-    #     df = pd.DataFrame(articles)
-    #
-    for m in range(2, 4):
-        month = str(m)
-        if len(month) == 1:
-            month = '0' + month
-        suffix = year + "_" + month
-        print(suffix)
-
-        with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
-            response = pickle.load(f)
-            articles = response['docs']
-            df_new = pd.DataFrame(articles)
-        df = df_new # = pd.concat([df, df_new], ignore_index=True)
-        print(df.shape)
-
-        df = df[~(df.word_count.isnull())]
-        df['word_count'] = df.word_count.apply(lambda x: int(x))
-        df = df[df.word_count > 20]
-        df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
-        df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
-
-        table_keywords_partial = create_keywords_table_partial(df)
-        print(table_keywords_partial.shape)
-        with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "wb") as f:
-            pickle.dump(table_keywords_partial, f)
-
-        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "rb") as f:
-            table_big = pickle.load(f)
-
-        print(table_big.shape, table_keywords_partial.shape)
-        table_big = table_big[table_big.counts >= 2]
-        table_keywords_partial = table_keywords_partial[table_keywords_partial.counts >= 2]
-
-        table_big = merge_keyword_tables(table_big, table_keywords_partial)
-
-        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "wb") as f:
-            pickle.dump(table_big, f)
-
-        # 17:42 - 17:59 - table_big is keywords 2018-01 - 2018-03
-
-    table_keywords = table_big[1:]
+    # table_keywords = table_big[table_big.counts >= 2]
+    table_keywords = table_keywords[1:]
     table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
+    key_sum = table_keywords.counts.sum()
+    table_keywords['prob'] = np.log(table_keywords.counts / key_sum)
 
+    table_keywords.section.value_counts()
     # t = table_keywords[table_keywords.counts >= 10]
     # t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
     # table_keywords = t
@@ -457,7 +502,7 @@ def main():
         df = pd.DataFrame(articles)
 
 
-    for m in range(2, 4):
+    for m in range(2, 13):
         month = str(m)
         if len(month) == 1:
             month = '0' + month
@@ -469,7 +514,6 @@ def main():
             articles = response['docs']
             df_new = pd.DataFrame(articles)
         df = pd.concat([df, df_new], ignore_index=True)
-        print(df.shape)
 
     df = df[~(df.word_count.isnull())]
     df['word_count'] = df.word_count.apply(lambda x: int(x))
@@ -478,6 +522,7 @@ def main():
     df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
 
     df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
+
 
     keywords = df.keywords
 
@@ -491,6 +536,14 @@ def main():
     # keywords = pd.concat([keywords_16, keywords_17, keywords_18], ignore_index=True)
 
     edges, nodes = edges_nodes(keywords, table_keywords)
+    edges.shape
+
+    with open(cwd + "/data/edges_" + year + ".pickle", "wb") as f:
+        pickle.dump(edges, f)
+    with open(cwd + "/data/nodes_" + year + ".pickle", "wb") as f:
+        pickle.dump(nodes, f)
+    # with open(cwd + "/data/df_" + year + ".pickle", "wb") as f:
+    #     pickle.dump(df, f)
 
     # TODO: overthink method
     #       especially the 20% thing. maybe it deletes nodes that were prior connected to something else already.
@@ -509,21 +562,23 @@ def main():
     # remove nodes that would have less than 3 edges
 
     # now only the nodes that have section specified
-    # nodes_wo = nodes[~(nodes.section == 0)]
+    nodes_wo = nodes[~(nodes.Section == 0)]
 
-    edges_20, nodes_20 = reduce_edges(nodes_freq, edges, 0.1, 5)
+    edges_reduced, nodes_reduced = reduce_edges_2(nodes_wo, edges, 0.2, 2)
+    print(edges_reduced.shape, nodes_reduced.shape)
 
-    s = nodes_20.Section.value_counts()
-    s = s.reset_index()
+    edges_reduced.Source.value_counts()
+    edges_reduced.Target.value_counts()
 
-    # TODO: why do I have so many nodes in edges, that dont appear in nodes?
 
-    edges_20.shape
-    nodes_20.shape
-    nodes_20.to_csv(cwd + '/data/gephi/03_nodes_10-5.csv', sep=';', index=False)
-    edges_20.to_csv(cwd + '/data/gephi/03_edges_10-5.csv', sep=';', index=False)
+    name = '2018_20-2_wo_s0_counts'
+    nodes_reduced.to_csv(cwd + '/data/gephi/04_nodes_' + name + '.csv', sep=';', index=False)
+    edges_reduced.to_csv(cwd + '/data/gephi/04_edges_' + name + '.csv', sep=';', index=False)
 
-    with open(cwd + "/data/gephi/03_edges_16-18.pickle", "wb") as f:
-        pickle.dump(edges_20, f)
-    with open(cwd + "/data/gephi/03_nodes_16-18.pickle", "wb") as f:
-        pickle.dump(nodes_20, f)
+    with open(cwd + "/data/gephi/04_edges_" + name + ".pickle", "wb") as f:
+        pickle.dump(edges_reduced, f)
+    with open(cwd + "/data/gephi/04_nodes_" + name + ".pickle", "wb") as f:
+        pickle.dump(nodes_reduced, f)
+
+edges_reduced.shape
+nodes_reduced.shape
