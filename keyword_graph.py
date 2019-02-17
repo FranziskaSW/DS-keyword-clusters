@@ -331,19 +331,20 @@ def edge_weight(edges_row, table_keywords):
     p1 = (edges_row.prob - table_keywords[table_keywords.id == edges_row.Target].prob).get_values()[0]  # 0.536082
     # P(Inaugurations | Trump) = P(Trump, Inaugurations) / P(Trump)
     p2 = (edges_row.prob - table_keywords[table_keywords.id == edges_row.Source].prob).get_values()[0]
-    p = (p1 + p2)
+    p1, p2 = np.exp(p1), np.exp(p2)
+    p = (p1 + p2)*100
     return p
+#
+# # how often does 24660 appear in articles?
+# table_keywords[table_keywords.id == 49]  # 9
+#
+# #how often does 24660 appear in edges?
+# n[n.id == 49].counts # 28
+#
+# table_keywords_bu = table_keywords
+# table_keywords = n
 
-# how often does 24660 appear in articles?
-table_keywords[table_keywords.id == 49]  # 9
-
-#how often does 24660 appear in edges?
-n[n.id == 49].counts # 28
-
-table_keywords_bu = table_keywords
-table_keywords = n
-
-def edges_nodes(article_keywords, table_keywords):
+def edges_nodes(article_keywords, table_keywords, no_articles):
     edges_list = article_keywords.apply(lambda x: keyword_edges(x)).tolist()  # each article has a list of keywords
     edges_df = pd.Series(list(chain.from_iterable(edges_list)))  # write everything in one list
     edges_counts = edges_df.value_counts()
@@ -354,23 +355,9 @@ def edges_nodes(article_keywords, table_keywords):
     edges['Counts'] = edges_counts.reset_index()[0]
 
     e = edges[['Source', 'Target', 'Counts']]
-    e_sum = e.Counts.sum()
-    e['prob'] = np.log(e.Counts/e_sum)
+    e['prob'] = np.log(e.Counts/no_articles)
 
-    # how often got node connected? sum(edge*edge_count)
-    s = edges.Source.value_counts()
-    t = edges.Target.value_counts()
-    st = pd.merge(pd.DataFrame(s), pd.DataFrame(t), left_index=True, right_index=True, how='outer').fillna(0)
-    st['counts'] = st.Source + st.Target
-    n = st.reset_index()[['index', 'counts']]
-    n.columns = ['id', 'counts']  # like table_keywords, but not in how many articles keyword was used,
-                                  # but how many edges we get
-    n_sum = n.counts.sum()
-    n['prob'] = np.log(n.counts/n_sum)
-
-    e['Weight'] = edges[:1000].apply(lambda x: edge_weight(x, n), axis=1)
-
-    e.sort_values(by='Weight', ascending=False)
+    e['Weight'] = e.apply(lambda x: edge_weight(x, table_keywords), axis=1)
 
     t = table_keywords[['id', 'section', 'value']]
     ids_1 = e.Source.value_counts().index.get_values().tolist()  # unique ids in Source
@@ -474,8 +461,8 @@ def main():
     # table_keywords = table_big[table_big.counts >= 2]
     table_keywords = table_keywords[1:]
     table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
-    key_sum = table_keywords.counts.sum()
-    table_keywords['prob'] = np.log(table_keywords.counts / key_sum)
+    no_articles = df.shape[0]  # TODO: global
+    table_keywords['prob'] = np.log(table_keywords.counts / no_articles)
 
     table_keywords.section.value_counts()
     # t = table_keywords[table_keywords.counts >= 10]
@@ -545,6 +532,7 @@ def main():
     # with open(cwd + "/data/df_" + year + ".pickle", "wb") as f:
     #     pickle.dump(df, f)
 
+
     # TODO: overthink method
     #       especially the 20% thing. maybe it deletes nodes that were prior connected to something else already.
     #       draw sketch like who is in network with whom. if b is in 20% of b, but has only less than 1 connection
@@ -563,21 +551,33 @@ def main():
 
     # now only the nodes that have section specified
     nodes_wo = nodes[~(nodes.Section == 0)]
+    mask = [all(tup) for tup in zip(edges.Source.isin(nodes_wo.id), edges.Target.isin(nodes_wo.id))]
+    edges_wo = edges[mask]
 
-    edges_reduced, nodes_reduced = reduce_edges_2(nodes_wo, edges, 0.2, 2)
+    edges_reduced, nodes_reduced = reduce_edges_2(nodes_wo, edges_wo, 0.2, 2)
     print(edges_reduced.shape, nodes_reduced.shape)
+
+    s = edges_reduced.Source.value_counts()
+    t = edges_reduced.Target.value_counts()
+
+    st = pd.merge(pd.DataFrame(s), pd.DataFrame(t), left_index=True, right_index=True, how='outer').fillna(0)
+    st['counts'] = st.Source + st.Target
+
+    pd.Series(st.index.isin(nodes_reduced.index)).value_counts()
+
+
 
     edges_reduced.Source.value_counts()
     edges_reduced.Target.value_counts()
 
 
-    name = '2018_20-2_wo_s0_counts'
-    nodes_reduced.to_csv(cwd + '/data/gephi/04_nodes_' + name + '.csv', sep=';', index=False)
-    edges_reduced.to_csv(cwd + '/data/gephi/04_edges_' + name + '.csv', sep=';', index=False)
+    name = '2018_01-wo'
+    nodes_reduced.to_csv(cwd + '/data/gephi/05_nodes_' + name + '.csv', sep=';', index=False)
+    edges_reduced.to_csv(cwd + '/data/gephi/05_edges_' + name + '.csv', sep=';', index=False)
 
-    with open(cwd + "/data/gephi/04_edges_" + name + ".pickle", "wb") as f:
+    with open(cwd + "/data/gephi/05_edges_" + name + ".pickle", "wb") as f:
         pickle.dump(edges_reduced, f)
-    with open(cwd + "/data/gephi/04_nodes_" + name + ".pickle", "wb") as f:
+    with open(cwd + "/data/gephi/05_nodes_" + name + ".pickle", "wb") as f:
         pickle.dump(nodes_reduced, f)
 
 edges_reduced.shape
