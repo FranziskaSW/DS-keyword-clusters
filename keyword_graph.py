@@ -450,21 +450,18 @@ def reduce_edges_2(nodes, edges, percentage, min_edges):
 
 def main():
 
-    year = '2018'
+    year = '2017'
     with open(cwd + "/data/table_sections_16-18.pickle", "rb") as f:
         table_sections = pickle.load(f)
-
-    with open(cwd + "/data/keywords/table_keywords_2018_01.pickle", "rb") as f:
+    with open(cwd + "/data/keywords/table_keywords_big_2018.pickle", "rb") as f:
         table_keywords = pickle.load(f)
-
+    with open(cwd + "/data/df_2018.pickle", "rb") as f:
+        df = pickle.load(f)
 
     # table_keywords = table_big[table_big.counts >= 2]
-    table_keywords = table_keywords[1:]
+    # table_keywords = table_keywords[1:]
     table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
-    no_articles = df.shape[0]  # TODO: global
-    table_keywords['prob'] = np.log(table_keywords.counts / no_articles)
 
-    table_keywords.section.value_counts()
     # t = table_keywords[table_keywords.counts >= 10]
     # t['section'] =  t.section_count.apply(lambda x: section_max(x)) # hat only assignes when more than 50%
     # table_keywords = t
@@ -483,11 +480,66 @@ def main():
     # t.newsdesk.value_counts().shape
     #################################################################################
 
+    # use df_month to create keywords_table
+    # need to do first step manually. create table_keywords_year_01 and rename
+    # to table_big_year
+    # then can run algorithm from 02 onwards
+
+    # with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
+    #     response = pickle.load(f)
+    #     articles = response['docs']
+    #     df = pd.DataFrame(articles)
+
+    with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "wb") as f:
+        pickle.dump(table_keywords_partial, f)
+
+    for m in range(2, 13):
+        month = str(m)
+        if len(month) == 1:
+            month = '0' + month
+        suffix = year + "_" + month
+        print(suffix)
+
+        with open(cwd + "/data/archive/" + suffix + ".pickle", "rb") as f:
+            response = pickle.load(f)
+            articles = response['docs']
+            df_new = pd.DataFrame(articles)
+        df = df_new  # = pd.concat([df, df_new], ignore_index=True)
+        print(df.shape)
+
+        df = df[~(df.word_count.isnull())]
+        df['word_count'] = df.word_count.apply(lambda x: int(x))
+        df = df[df.word_count > 20]
+        df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
+        df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
+
+        table_keywords_partial = create_keywords_table_partial(df)
+        print(table_keywords_partial.shape)
+        with open(cwd + "/data/keywords/table_keywords_" + suffix + ".pickle", "wb") as f:
+            pickle.dump(table_keywords_partial, f)
+
+        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "rb") as f:
+            table_big = pickle.load(f)
+
+        print(table_big.shape, table_keywords_partial.shape)
+
+        table_big = table_big[table_big.counts >= 2]
+        table_keywords_partial = table_keywords_partial[table_keywords_partial.counts >= 2]
+        print(table_big.shape, table_keywords_partial.shape)
+
+        table_big = merge_keyword_tables(table_big, table_keywords_partial)
+
+        with open(cwd + "/data/keywords/table_keywords_big_" + year + ".pickle", "wb") as f:
+            pickle.dump(table_big, f)
+
+    # concat dfs to df_year and then clean and translate keywords
     with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
         response = pickle.load(f)
         articles = response['docs']
         df = pd.DataFrame(articles)
 
+    table_keywords = table_big
+    table_keywords['section'] = table_keywords.section_count.apply(lambda x: section_max(x))
 
     for m in range(2, 13):
         month = str(m)
@@ -508,21 +560,24 @@ def main():
     df['section'] = df.section_name.apply(lambda x: extr_newsdesk(x))
     df['section'] = df.section.apply(lambda x: section2id(x, table_sections))
 
+    # hier weiter:
+    # load df
+    # load table_keywords_big
+
     df.keywords = df.keywords.apply(lambda x: extr_keywords(x, table_keywords))
 
+    no_articles = df.shape[0]  # TODO: global
+    table_keywords['prob'] = np.log(table_keywords.counts / no_articles)
 
     keywords = df.keywords
 
-    # keywords_series = df.keywords
-    #
-    # # keywords_18 =
-    # # keywords_17 = keywords_series
-    # keywords_16 = keywords_series
-    #
-    # # combine keywords of the years
-    # keywords = pd.concat([keywords_16, keywords_17, keywords_18], ignore_index=True)
 
-    edges, nodes = edges_nodes(keywords, table_keywords)
+    # with open(cwd + "/data/edges_2018.pickle", "rb") as f:
+    #     edges = pickle.load(f)
+    # with open(cwd + "/data/nodes_2018.pickle", "rb") as f:
+    #     nodes = pickle.load(f)
+
+    edges, nodes = edges_nodes(keywords, table_keywords, no_articles)
     edges.shape
 
     with open(cwd + "/data/edges_" + year + ".pickle", "wb") as f:
@@ -571,7 +626,7 @@ def main():
     edges_reduced.Target.value_counts()
 
 
-    name = '2018_01-wo'
+    name = '2018_20-2_wo'
     nodes_reduced.to_csv(cwd + '/data/gephi/05_nodes_' + name + '.csv', sep=';', index=False)
     edges_reduced.to_csv(cwd + '/data/gephi/05_edges_' + name + '.csv', sep=';', index=False)
 
