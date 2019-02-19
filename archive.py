@@ -101,3 +101,24 @@ nodes_combined = nodes_c[['id', 'value', '12']]
 nodes_combined.columns = ['id', 'value', 'section']
 
 nodes_combined.section.isnull().value_counts()
+
+
+#
+# def update_tables(df):
+#     with open(cwd + "/data/table_sections.pickle", "rb") as f:
+#         table_sections = pickle.load(f)
+#     table_sections = create_section_table(df, table_sections)
+#     with open(cwd + "/data/table_sections.pickle", "wb") as f:
+#         pickle.dump(table_sections, f)
+#     df['section'] = df.section_name.apply(lambda x: section2id(x, table_sections))
+#
+#     with open(cwd + "/data/table_keywords.pickle", "rb") as f:
+#         table_keywords = pickle.load(f)
+#
+#     # table_keywords = pd.DataFrame([[0, '*name*', '*value*', 0]], columns=['id', 'name', 'value', 'counts'])
+#
+#     table_keywords = create_keywords_table(df, table_keywords)
+#     with open(cwd + "/data/table_keywords.pickle", "wb") as f:
+#         pickle.dump(table_keywords, f)
+#     return table_keywords, table_sections
+
