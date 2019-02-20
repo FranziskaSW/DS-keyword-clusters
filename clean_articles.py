@@ -1,6 +1,7 @@
 import pickle
 import pandas as pd
 import os
+import numpy as np
 
 global cwd
 cwd = os.getcwd()
@@ -30,7 +31,7 @@ def clean_section(name):
     books = ['Book Review', 'BookReview', 'Best Sellers', 'By the Book', 'Crime', 'Children\'s Books', 'Book Review Podcast',
              'Now read this']
     if name in books: return 'Books'
-    style = ['Men\'s Style', 'Style', 'Styles', 'TStyle', 'Fashion & Style', 'Fashion', 'Weddings', 'Self-Care']  # Weddings wo nd Society
+    style = ['Men\'s Style', 'Style', 'Styles', 'TStyle', 'Fashion & Style', 'Fashion', 'Weddings', 'Self-Care']
     if name in style: return 'Style'
     science = ['Energy & Environment', 'Science', 'Climate', 'Opinion | Environment', 'Space & Cosmos', 'Trilobites',
                'Sciencetake', 'Out There']
@@ -90,8 +91,9 @@ def extr_keywords_step1(field):
 
 def create_keyword_table_partial(df):
     dfs = df[['_id', 'section', 'pub_date', 'headline', 'keywords']]
-
+    # expand columns from keyword_dict
     d1 = dfs.keywords.apply(pd.Series).merge(dfs, left_index=True, right_index=True).drop(["keywords"], axis = 1)
+    # columns are additional rows
     d2 = d1.melt(id_vars = ['_id', 'section', 'pub_date', 'headline'], value_name = "keyword").drop("variable", axis = 1)
 
     mask = d2.keyword.isna()
@@ -108,7 +110,7 @@ def create_keyword_table_partial(df):
     return table
 
 
-def create_keyword_table(table, threshold):
+def create_keyword_table(table, threshold, article_amount):
     keyword_table = pd.DataFrame([['keyword', 'name', 'value', 0, 'section']],
                                  columns=['keyword', 'name', 'value', 'total_counts', 'section'])
     for kw in table.keyword.unique():
@@ -116,12 +118,15 @@ def create_keyword_table(table, threshold):
         max_count = entries['counts'].max()
         total_counts = entries['counts'].sum()
         if max_count >= threshold*total_counts:
-            idx = entries['counts'].argmax()
+            idx = entries['counts'].idxmax()
             section = table.loc[idx, 'section']
         else:
             section = '*UNSPECIFIC*'
         new_row = pd.DataFrame([[kw, kw[0], kw[1], total_counts, section]], columns=['keyword', 'name', 'value', 'counts', 'section'])
         keyword_table = keyword_table.append(new_row)
+        keyword_table['id'] = range(0, keyword_table.shape[0])
+        keyword_table['prob'] = np.log(keyword_table.counts / article_amount)
+        keyword_table = keyword_table[1:]
     return keyword_table
 
 
@@ -134,7 +139,7 @@ with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
     articles = response['docs']
     df = pd.DataFrame(articles)
 
-for m in range(2, 13):
+for m in range(2, 3):
     month = str(m)
     if len(month) == 1:
         month = '0' + month
@@ -154,9 +159,13 @@ df.section.value_counts()
 df = df[~(df['section'] == '*DELETE*')]
 df.section.value_counts()
 
-
+article_amount = df.shape[0]
 
 table = create_keyword_table_partial(df)
-table_keywords = create_keyword_table(table, 0.5)
+table_keywords = create_keyword_table(table, 0.35, article_amount)
 
-table_keywords.sort_values(by='counts')
+with open(cwd + "/data/02_table_keywords_" + year + ".pickle", "wb") as f:
+     pickle.dump(table_keywords, f)
+
+table_keywords.sort_values(by='counts', ascending=False)[['section', 'value']].head(20)
+table_keywords.section.value_counts()
