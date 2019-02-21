@@ -7,7 +7,7 @@ global cwd
 cwd = os.getcwd()
 
 
-def clean_section(name):
+def getSectionDict(name):
     world = ['World', 'Africa', 'Americas', 'Asia', 'Asia Pacific', 'Australia', 'Canada', 'Europe', 'Middle East',
              'What in the World', 'Opinion | The World', 'Foreign']
     if name in world: return 'World'
@@ -69,14 +69,14 @@ def clean_articles(df, word_count):
     df = df[df.word_count > word_count]
     df['headline'] = df.headline.apply(lambda x: extr_headline_main(x))
     df = df.drop_duplicates(['headline', 'section_name'])
-    df['section'] = df.section_name.apply(lambda x: clean_section(x))
     #TODO: add medium
     return df
 
-def rename_sections(df):
-    df['section'] = df.section_name.apply(lambda x: clean_section(x))
-    without_section = df[df.section == '*UNKNOWN*']
-    sections_from_newsdesk = without_section.news_desk.apply(lambda x: clean_section(x))
+def clean_sections(df):
+    df['section'] = df.section_name.apply(lambda x: getSectionDict(x))
+    without_section = df[df.section == '*UNKNOWN*']  # the articles that haven't had a section_name,
+                                                     # many of them have news_desk entry
+    sections_from_newsdesk = without_section.news_desk.apply(lambda x: getSectionDict(x))
     idx = sections_from_newsdesk.index.get_values()
     df.loc[idx, 'section'] = sections_from_newsdesk
     return df
@@ -126,12 +126,12 @@ def create_keyword_table(table, threshold, article_amount):
         keyword_table = keyword_table.append(new_row)
         keyword_table['id'] = range(0, keyword_table.shape[0])
         keyword_table['prob'] = np.log(keyword_table.counts / article_amount)
-        keyword_table = keyword_table[1:]
+    keyword_table = keyword_table[1:]
     return keyword_table
 
 
 ######################
-year = '2018'
+year = '2016'
 
 # concat dfs to df_year and then clean and translate keywords
 with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
@@ -139,7 +139,7 @@ with open(cwd + "/data/archive/" + year + "_01.pickle", "rb") as f:
     articles = response['docs']
     df = pd.DataFrame(articles)
 
-for m in range(2, 3):
+for m in range(2, 13):
     month = str(m)
     if len(month) == 1:
         month = '0' + month
@@ -152,12 +152,10 @@ for m in range(2, 3):
         df_new = pd.DataFrame(articles)
     df = pd.concat([df, df_new], ignore_index=True)
 
-df.shape
-df = clean_articles(df, 20)
-df = rename_sections(df)
-df.section.value_counts()
-df = df[~(df['section'] == '*DELETE*')]
-df.section.value_counts()
+print(df.shape)
+df = clean_articles(df=df, word_count=20)
+df = clean_sections(df)
+df = df[~(df['section'] == '*DELETE*')]  # drop sections that are not interesting for keyword-analysis
 
 article_amount = df.shape[0]
 
